@@ -2,6 +2,7 @@ import pandas as pd
 import pdb, re
 import numpy as np
 from nltk.stem.porter import *
+from nltk.corpus import stopwords
 from nltk import word_tokenize
 from sklearn import svm
 from sklearn.pipeline import Pipeline
@@ -17,6 +18,22 @@ from sklearn.decomposition import TruncatedSVD
 from sklearn.metrics import confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from gensim.models.keyedvectors import KeyedVectors
+class SMSVectorizer(CountVectorizer):
+    def __init__(self, input='content', encoding='utf-8',
+                 decode_error='strict', strip_accents=None,
+                 lowercase=True, preprocessor=None, tokenizer=None,
+                 stop_words=None, token_pattern=r"(?u)\b\w\w+\b",
+                 ngram_range=(1, 1), analyzer='word',
+                 max_df=1.0, min_df=1, max_features=None,
+                 vocabulary=None, binary=False, dtype=np.int64):
+        super(SMSVectorizer, self).__init__()
+
+    def prepare_doc(self, doc):
+        ques_list = ['?', 'what', 'were', 'where', 'who', 'when', 'why',
+                     'which', 'how']
+        for word in ques_list:
+            doc = doc.replace(word, '_QUESTION')
+
 
 class NLTKPreprocessor(object):
     def __init__(self):
@@ -116,7 +133,7 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
             print(model.score(X_test, y_test))
         return model
 
-    word_vectors = KeyedVectors.load_word2vec_format('/run/media/sumit/linux/POST/GoogleNews-vectors-negative300.bin.gz', binary=True)  # C binary format
+    #word_vectors = KeyedVectors.load_word2vec_format('/run/media/sumit/linux/POST/GoogleNews-vectors-negative300.bin.gz', binary=True)  # C binary format
     # Label encode the targets
     labels = LabelEncoder()
     y_train = labels.fit_transform(y_train)
@@ -135,8 +152,15 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
     X_tr_mat = vect.fit_transform(X_train)
     X_te_mat = vect.transform(X_test)
     vector = np.append(X_train, X_test, axis=0)
-    maxlen = len(max(vector, key=lambda k:len(k)).split())
-    #vectors = generate_word_vectors(X_train, word_vectors, maxlen)
+    vec_new = []
+    for line in vector:
+        new_line = []
+        for word in line.strip().split():
+            if word not in stopwords.words('english'):
+                new_line.append(word)
+        vec_new.append(' '.join(new_line))
+    maxlen = len(max(vec_new, key=lambda k:len(k)).split())
+    vectors = generate_word_vectors(X_train, vec_new, maxlen)
     pdb.set_trace()
     print("top 10 words")
     print(sr[0:10])

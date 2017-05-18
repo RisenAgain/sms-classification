@@ -1,12 +1,15 @@
 import pandas as pd
 import pdb, re
 import numpy as np
+import scipy as sp
 from nltk.stem.porter import *
 from nltk.corpus import stopwords
 from nltk import word_tokenize
 from sklearn import svm
 from sklearn.pipeline import Pipeline
+from sklearn.feature_selection import SelectFromModel
 from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import classification_report as clsr
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.model_selection import KFold
@@ -59,6 +62,37 @@ y_train = train["Category"]
 X_test = test["Message"]
 y_test = test["Category"]
 
+def generate_train_test(X_train, X_test, y_train, y_test):
+    Xtr, ytr = one_vs_all_classes(X_train, y_train, 0)
+    Xte, yte = one_vs_all_classes(X_test, y_test, 0)
+    return Xtr, Xte, ytr, yte
+
+def analysis(model, X_test, y_test):
+    clf = model.named_steps['classif']
+    voc = model.named_steps['vect'].vocabulary_
+    sr = feature_importances(clf, voc)
+    print("top and bottom 10 features")
+    print(sr[0:10])
+    print(sr[-10:])
+    y_pred = model.predict(X_test)
+    print(confusion_matrix(y_test, y_pred))
+    print(clsr(y_test, y_pred))
+
+def feature_selection(model, X_train, y_train, X_test, y_test):
+    clf = model.named_steps['classif']
+    vect = model.named_steps['vect']
+    sfm = SelectFromModel(clf, prefit=True, threshold = 0)
+    n_features = sfm.transform(vect.transform(X_train)).shape[1]
+    Xtr = None
+    while n_features > 10:
+        sfm.threshold += 0.1
+        Xtr = sfm.transform(vect.transform(X_train))
+        n_features = Xtr.shape[1]
+    Xte = sfm.transform(vect.transform(X_test))
+    clf = LogisticRegression()
+    clf.fit(Xtr, y_train)
+    clf.score(Xte, y_test)
+
 def feature_importances(classif, vocab):
     coefs = None
     if hasattr(classif, 'coef_'):
@@ -69,29 +103,41 @@ def feature_importances(classif, vocab):
     feat = [(i_voc[idx], val) for idx, val in list(zip(range(0, len(coefs)), coefs))]
     return sorted(feat, key=lambda k:k[1], reverse=True)
 
-#def generate_word_vectors(X, model, maxlen):
-#    vectors = np.array((0,maxlen*300))
-#    for line in X:
-#        line_vec = np.array([])
-#        for word in line.strip().split():
-#            vec = np.zeros((1,300))
-#            try:
-#                vec = model[word]
-#            except:
-#                pass
-#            np.append(line_vec, vec)
-#        while line_vec.shape[0] < maxlen * 300:
-#            np.append(line_vec, np.zeros((1,300)))
-#        np.append(vectors, line_vec, axis=0)
-#    return vectors
+def save_misc(mode, X_test, y_test):
+    y_preds = model.predict(Xte)
+    misc = np.where(y_preds != yte)
+    miscXY = list(zip(Xte[misc], yte[misc]))
+    fout1 = open('emergency_miss', 'w')
+    fout2 = open('todo_miss', 'w')
+    for line in miscXY:
+        if line[1] == 1:
+            fout1.write(line[0]+'\n')
+        else:
+            fout2.write(line[0]+'\n')
+    fout1.close()
+    fout2.close()
+
+def generate_word_vectors(X, model, maxlen):
+    vectors = np.empty((0,300))
+    for line in X:
+        idx = 1
+        for word in line.strip().split():
+            vec = np.zeros((1,300))
+            try:
+                vec += model[word]
+                idx += 1
+            except:
+                pass
+        vectors = np.append(vectors, vec / idx, axis=0)
+    return vectors
 
 def one_vs_all_classes(X, y, class_n):
     #y_n = np.empty(y.shape, dtype=int)
     #y_n[y==0] = 1
     #y_n[y==2] = 0
     #pos_num = len(y_n[y_n==1])
-    xpos = list(X[y==2])
-    xneg = list(X[y==1])
+    xpos = list(X[y==0])
+    xneg = list(X[y==2])
     #xneg = list(xneg[0:pos_num])
     return np.array(xpos+xneg), np.array([1] * len(xpos) + [0] * len(xneg))
 
@@ -111,11 +157,6 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
             ),
             ('classif', classifier),
         ])
-        #kf = KFold(n_splits=5, shuffle=True)
-        #for train, test in kf.split(X):
-        #    X_train, X_test, y_train, y_test = X[train], X[test], y[train], y[test]
-        #    model.fit(X_train, y_train)
-        #    print(model.score(X_test, y_test))
         if parameters:
             clf = GridSearchCV(model, parameters)
             clf.fit(X_train, y_train)
@@ -124,66 +165,49 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
             for mean, std, params in zip(means, stds, clf.cv_results_['params']):
                 print("%0.3f (+/-%0.03f) for %r" % (mean, std * 2, params))
             print()
-            #y_true, y_pred = y_test, clf.predict(X_test)
-            #print(clsr(y_true, y_pred))
+            return clf
         else:
-            #ovr = OneVsRestClassifier(model)
-            #ovr.fit(X_train, y_train)
             model.fit(X_train, y_train)
             print(model.score(X_test, y_test))
         return model
 
-    #word_vectors = KeyedVectors.load_word2vec_format('/run/media/sumit/linux/POST/GoogleNews-vectors-negative300.bin.gz', binary=True)  # C binary format
+    #word_vectors = KeyedVectors.load_word2vec_format('~/GoogleNews-vectors-negative300.bin', binary=True)  # C binary format
     # Label encode the targets
     labels = LabelEncoder()
     y_train = labels.fit_transform(y_train)
     y_test = labels.fit_transform(y_test)
-    # For class one
-    Xtr, ytr = one_vs_all_classes(X_train, y_train, 0)
-    Xte, yte = one_vs_all_classes(X_test, y_test, 0)
+    Xtr, Xte, ytr, yte = generate_train_test(X_train, X_test, y_train, y_test)
     # Begin evaluation
     if verbose: print("Building for evaluation")
-    #model = build(classifier, X_train, y_train, X_test, y_test)
-    #svm = model.named_steps['classif']
-    #voc = model.named_steps['vect'].vocabulary_
-    #sr = feature_importances(svm, voc)
-    vect = TfidfVectorizer(preprocessor=NLTKPreprocessor(),
-                lowercase=True, stop_words='english', ngram_range=(1,2))
-    X_tr_mat = vect.fit_transform(X_train)
-    X_te_mat = vect.transform(X_test)
-    vector = np.append(X_train, X_test, axis=0)
-    vec_new = []
-    for line in vector:
-        new_line = []
-        for word in line.strip().split():
-            if word not in stopwords.words('english'):
-                new_line.append(word)
-        vec_new.append(' '.join(new_line))
-    maxlen = len(max(vec_new, key=lambda k:len(k)).split())
-    vectors = generate_word_vectors(X_train, vec_new, maxlen)
-    pdb.set_trace()
-    print("top 10 words")
-    print(sr[0:10])
-    print("bottom 10 words")
-    print(sr[-10:])
-    #pdb.set_trace()
-    if verbose:
-        #print("Evaluation model fit in {:0.3f} seconds".format(secs))
-        print("Classification Report:\n")
-    y_pred = model.predict(Xte)
-    #y_pred_prob = model.predict_proba(X_test)
-    #y1 = y_pred_prob[:,0]
-    #y_pred[y_pred==0] = 2
-    #y_pred[y_pred==1] = 0
-    #y_pred[(y1>0.45) & (y1<0.7)] = 1
-    print(confusion_matrix(yte, y_pred))
-    print(clsr(yte, y_pred))
+    model = build(classifier, Xtr, ytr, Xte, yte)
+    feature_selection(model, Xtr, ytr, Xte, yte)
+    #analysis(model, Xte, yte)
+    #save_misc(model, Xte, yte)
+    #vect = TfidfVectorizer(preprocessor=NLTKPreprocessor(),
+    #            lowercase=True, stop_words='english', ngram_range=(1,2))
+    #X_tr_mat = vect.fit_transform(X_train)
+    #X_te_mat = vect.transform(X_test)
+    #vector = np.append(X_train, X_test, axis=0)
+    #vec_new = []
+    #for line in vector:
+    #    new_line = []
+    #    for word in line.strip().split():
+    #        if word not in stopwords.words('english'):
+    #            new_line.append(word)
+    #    vec_new.append(' '.join(new_line))
+    #maxlen = len(max(vec_new, key=lambda k:len(k)).split())
+    #vectors_train = generate_word_vectors(X_train, word_vectors, maxlen)
+    #vectors_test = generate_word_vectors(X_test, word_vectors, maxlen)
+    #X_tr_mat = sp.sparse.hstack((X_tr_mat, vectors_train), format='csr')
+    #X_te_mat = sp.sparse.hstack((X_te_mat, vectors_test), format='csr')
+    #classifier.fit(X_tr_mat, y_train)
+    #print(classifier.score(X_te_mat, y_test))
     return model
 
-#clf = RandomForestClassifier(n_estimators=10)
-clf = svm.LinearSVC()
-clf = LogisticRegression(penalty='l2' )
-#clf = RandomForestClassifier()
+#clf = svm.LinearSVC()
+clf = LogisticRegression(penalty='l2')
+#clf = RandomForestClassifier(n_estimators = 10, max_features='sqrt')
+#clf = ExtraTreesClassifier()
 #params = {
 #    'vect__max_df': (0.5, 0.75, 1.0),
 #    'vect__ngram_range': ((1, 1), (1, 2)),

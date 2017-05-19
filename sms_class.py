@@ -57,15 +57,28 @@ train = pd.read_csv("training.csv", header=0, \
                     delimiter="\t", quoting=3)
 test = pd.read_csv("testing.csv", header=0, \
                     delimiter="\t", quoting=3)
-X_train = train["Message"]
+X_train = train
 y_train = train["Category"]
-X_test = test["Message"]
+X_test = test
 y_test = test["Category"]
 
 def generate_train_test(X_train, X_test, y_train, y_test):
     Xtr, ytr = one_vs_all_classes(X_train, y_train, 0)
     Xte, yte = one_vs_all_classes(X_test, y_test, 0)
     return Xtr, Xte, ytr, yte
+
+def misclassifications_class(model, Xte, yte):
+    y_preds = model.predict(Xte["Message"])
+    cats = ['Emergency', 'To-Do']
+    sub_cats = ['E_Health', 'E_Personal', 'E_Fire', 'E_Police', 'TD_Urgent',
+                'TD_Event', 'TD_General']
+    misc = np.where(y_preds != yte)
+    # select all misclassified in Emergency and To-DO
+    df = Xte.iloc[misc]
+    for sc in sub_cats:
+        total = Xte[Xte["New Sub Category"] == sc].shape[0]
+        miss = df[df["New Sub Category"] == sc].shape[0]
+        print("%s Miss: %s/%s(%04.2f)%%"%(sc, miss, total, (miss/total)*100))
 
 def analysis(model, X_test, y_test):
     clf = model.named_steps['classif']
@@ -136,10 +149,10 @@ def one_vs_all_classes(X, y, class_n):
     #y_n[y==0] = 1
     #y_n[y==2] = 0
     #pos_num = len(y_n[y_n==1])
-    xpos = list(X[y==0])
-    xneg = list(X[y==2])
+    xpos = X[y==0]
+    xneg = X[y==2]
     #xneg = list(xneg[0:pos_num])
-    return np.array(xpos+xneg), np.array([1] * len(xpos) + [0] * len(xneg))
+    return pd.concat([xpos, xneg]), np.array([1] * len(xpos) + [0] * len(xneg))
 
 def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
     classifier=svm.LinearSVC(), outpath=None, verbose=True):
@@ -179,8 +192,9 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
     Xtr, Xte, ytr, yte = generate_train_test(X_train, X_test, y_train, y_test)
     # Begin evaluation
     if verbose: print("Building for evaluation")
-    model = build(classifier, Xtr, ytr, Xte, yte)
-    feature_selection(model, Xtr, ytr, Xte, yte)
+    model = build(classifier, list(Xtr["Message"]), ytr, list(Xte["Message"]), yte) 
+    misclassifications_class(model, Xte, yte)
+    #feature_selection(model, Xtr, ytr, Xte, yte)
     #analysis(model, Xte, yte)
     #save_misc(model, Xte, yte)
     #vect = TfidfVectorizer(preprocessor=NLTKPreprocessor(),

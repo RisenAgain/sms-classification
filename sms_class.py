@@ -53,9 +53,9 @@ class NLTKPreprocessor(object):
         return " ".join(words)
 
 
-train = pd.read_csv("training.csv", header=0, \
+train = pd.read_csv("training.tsv", header=0, \
                     delimiter="\t", quoting=3)
-test = pd.read_csv("testing.csv", header=0, \
+test = pd.read_csv("testing.tsv", header=0, \
                     delimiter="\t", quoting=3)
 X_train = train
 y_train = train["Category"]
@@ -193,7 +193,7 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
     # Begin evaluation
     if verbose: print("Building for evaluation")
     model = build(classifier, list(Xtr["Message"]), ytr, list(Xte["Message"]), yte) 
-    misclassifications_class(model, Xte, yte)
+    #misclassifications_class(model, Xte, yte)
     #feature_selection(model, Xtr, ytr, Xte, yte)
     #analysis(model, Xte, yte)
     #save_misc(model, Xte, yte)

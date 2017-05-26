@@ -39,10 +39,14 @@ class SMSVectorizer(CountVectorizer):
 
 
 class NLTKPreprocessor(object):
-    def __init__(self):
+    def __init__(self, stem=True):
         self.stemmer = PorterStemmer()
+        self.stem = stem
     def preprocess(self, word):
-        w = self.stemmer.stem(word)
+        w = word
+        if self.stem:
+            w = self.stemmer.stem(word)
+        w = w.lower()
         w = re.sub('\d+', '_NUMBER', w)
         w = re.sub(',\[\]\(\)\.', ' ', w)
         w = re.sub('\s+', ' ', w)
@@ -67,11 +71,11 @@ def generate_train_test(X_train, X_test, y_train, y_test):
     Xte, yte = one_vs_all_classes(X_test, y_test, 0)
     return Xtr, Xte, ytr, yte
 
-def misclassifications_class(model, Xte, yte):
+def misclassifications_class(model, Xte, yte, wtf=False):
     y_preds = model.predict(Xte["Message"])
     cats = ['Emergency', 'To-Do']
-    sub_cats = ['E_Health', 'E_Personal', 'E_Fire', 'E_Police', 'TD_Urgent',
-                'TD_Event', 'TD_General']
+    sub_cats = ['E_Health', 'E_Personal', 'E_Fire', 'E_Police', 'TD_Urgent_Normal',
+                'TD_Event', 'TD_Urgent_CallBack', 'TD_General']
     misc = np.where(y_preds != yte)
     # select all misclassified in Emergency and To-DO
     df = Xte.iloc[misc]
@@ -79,6 +83,11 @@ def misclassifications_class(model, Xte, yte):
         total = Xte[Xte["New Sub Category"] == sc].shape[0]
         miss = df[df["New Sub Category"] == sc].shape[0]
         print("%s Miss: %s/%s(%04.2f)%%"%(sc, miss, total, (miss/total)*100))
+    if wtf:
+        emer_miss = df[df["Category"] == "Emergency"]
+        todo_miss = df[df["Category"] == "To-Do"]
+        emer_miss.to_csv('emer_miss', sep = '\t')
+        todo_miss.to_csv('todo_miss', sep = '\t')
 
 def analysis(model, X_test, y_test):
     clf = model.named_steps['classif']
@@ -87,9 +96,10 @@ def analysis(model, X_test, y_test):
     print("top and bottom 10 features")
     print(sr[0:10])
     print(sr[-10:])
-    y_pred = model.predict(X_test)
+    y_pred = model.predict(X_test["Message"])
     print(confusion_matrix(y_test, y_pred))
     print(clsr(y_test, y_pred))
+    return sr[0:10]+sr[-10:]
 
 def feature_selection(model, X_train, y_train, X_test, y_test):
     clf = model.named_steps['classif']
@@ -113,7 +123,7 @@ def feature_importances(classif, vocab):
     else:
         coefs = classif.feature_importances_
     i_voc = {k:v for v, k in vocab.items()}
-    feat = [(i_voc[idx], val) for idx, val in list(zip(range(0, len(coefs)), coefs))]
+    feat = [(i_voc[idx], val, idx) for idx, val in list(zip(range(0, len(coefs)), coefs))]
     return sorted(feat, key=lambda k:k[1], reverse=True)
 
 def save_misc(mode, X_test, y_test):
@@ -130,20 +140,52 @@ def save_misc(mode, X_test, y_test):
     fout1.close()
     fout2.close()
 
-def generate_word_vectors(X, model, maxlen):
-    vectors = np.empty((0,300))
-    for line in X:
-        idx = 1
-        for word in line.strip().split():
+def generate_word_vectors_concat(model, words, X):
+    wv_list = []
+    for w in words:
+        try:
+            v = model[w]
+            wv_list.append(w)
+        except:
+            pass
+    vectors = np.empty((0,300*len(wv_list)))
+    for x in X:
+        sent = x.lower().split()
+        vec_line = np.array([])
+        for w in wv_list:
             vec = np.zeros((1,300))
             try:
-                vec += model[word]
-                idx += 1
+                if w in sent:
+                    vec = model[w]
             except:
                 pass
-        vectors = np.append(vectors, vec / idx, axis=0)
+            vec_line = np.append(vec_line, vec)
+        vec_line = vec_line.reshape((1, 300*len(wv_list)))
+        vectors = np.append(vectors, vec_line, axis=0)
     return vectors
 
+def generate_word_vectors_avg(model, words, X):
+    wv_list = []
+    for w in words:
+        try:
+            v = model[w]
+            wv_list.append(w)
+        except:
+            pass
+    vector = np.empty((0,300))
+    for x in X:
+        sent = x.lower().split()
+        vec = np.zeros((1,300))
+        idx = 0
+        for w in wv_list:
+            if w in sent:
+                vec += model[w]
+                idx += 1
+        if idx == 0:
+            idx = 1
+        #pdb.set_trace()
+        vector = np.append(vector, vec / idx, axis=0)
+    return vector
 def one_vs_all_classes(X, y, class_n):
     #y_n = np.empty(y.shape, dtype=int)
     #y_n[y==0] = 1
@@ -153,6 +195,38 @@ def one_vs_all_classes(X, y, class_n):
     xneg = X[y==2]
     #xneg = list(xneg[0:pos_num])
     return pd.concat([xpos, xneg]), np.array([1] * len(xpos) + [0] * len(xneg))
+
+def extract_full_words(prep, words, vocab):
+    wordlist = []
+    for w in vocab:
+        if prep.stemmer.stem(w) in words:
+            wordlist.append(w)
+    return wordlist
+
+def with_wv(model, Xtr, ytr, Xte, yte):
+    word_vectors = KeyedVectors.load_word2vec_format('~/GoogleNews-vectors-negative300.bin', binary=True)  # C binary format
+    prep = NLTKPreprocessor(stem=False)
+    vect = TfidfVectorizer(preprocessor=prep,
+                lowercase=True, stop_words='english', ngram_range=(1,2))
+    X_tr_mat = vect.fit_transform(Xtr["Message"])
+    X_te_mat = vect.transform(Xte["Message"])
+    vocab = vect.get_feature_names()
+    imp_words = list(zip(*analysis(model, Xte, yte)))
+    imp_indices = list(imp_words[2])
+    #vocab = np.array(vocab)
+    words = list(imp_words[0])
+    imp_names = extract_full_words(prep, words, vocab)
+    X_tr_mat = model.named_steps['vect'].transform(Xtr["Message"])
+    X_te_mat = model.named_steps['vect'].transform(Xte["Message"])
+    
+    vectors_train = generate_word_vectors_avg(word_vectors, imp_names, Xtr["Message"])
+    vectors_test = generate_word_vectors_avg(word_vectors, imp_names, Xte["Message"])
+    X_tr_mat = sp.sparse.hstack((X_tr_mat, vectors_train), format='csr')
+    X_te_mat = sp.sparse.hstack((X_te_mat, vectors_test), format='csr')
+    cls = model.named_steps['classif']
+    cls.fit(X_tr_mat, ytr)
+    y_pred = (cls.predict(X_te_mat))
+    print(clsr(yte, y_pred))
 
 def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
     classifier=svm.LinearSVC(), outpath=None, verbose=True):
@@ -165,8 +239,8 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
         #    classifier = classifier()
 
         model = Pipeline([
-            ('vect', TfidfVectorizer(preprocessor=NLTKPreprocessor(),
-                lowercase=True, stop_words='english', ngram_range=(1,2))
+            ('vect', TfidfVectorizer(preprocessor=NLTKPreprocessor(stem=True),
+                lowercase=True, stop_words='english', ngram_range=(2,2))
             ),
             ('classif', classifier),
         ])
@@ -184,7 +258,6 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
             print(model.score(X_test, y_test))
         return model
 
-    #word_vectors = KeyedVectors.load_word2vec_format('~/GoogleNews-vectors-negative300.bin', binary=True)  # C binary format
     # Label encode the targets
     labels = LabelEncoder()
     y_train = labels.fit_transform(y_train)
@@ -193,33 +266,15 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
     # Begin evaluation
     if verbose: print("Building for evaluation")
     model = build(classifier, list(Xtr["Message"]), ytr, list(Xte["Message"]), yte) 
-    #misclassifications_class(model, Xte, yte)
-    #feature_selection(model, Xtr, ytr, Xte, yte)
     #analysis(model, Xte, yte)
+    #with_wv(model, Xtr, ytr, Xte, yte)
+    misclassifications_class(model, Xte, yte, True)
+    #feature_selection(model, Xtr, ytr, Xte, yte)
     #save_misc(model, Xte, yte)
-    #vect = TfidfVectorizer(preprocessor=NLTKPreprocessor(),
-    #            lowercase=True, stop_words='english', ngram_range=(1,2))
-    #X_tr_mat = vect.fit_transform(X_train)
-    #X_te_mat = vect.transform(X_test)
-    #vector = np.append(X_train, X_test, axis=0)
-    #vec_new = []
-    #for line in vector:
-    #    new_line = []
-    #    for word in line.strip().split():
-    #        if word not in stopwords.words('english'):
-    #            new_line.append(word)
-    #    vec_new.append(' '.join(new_line))
-    #maxlen = len(max(vec_new, key=lambda k:len(k)).split())
-    #vectors_train = generate_word_vectors(X_train, word_vectors, maxlen)
-    #vectors_test = generate_word_vectors(X_test, word_vectors, maxlen)
-    #X_tr_mat = sp.sparse.hstack((X_tr_mat, vectors_train), format='csr')
-    #X_te_mat = sp.sparse.hstack((X_te_mat, vectors_test), format='csr')
-    #classifier.fit(X_tr_mat, y_train)
-    #print(classifier.score(X_te_mat, y_test))
     return model
 
-#clf = svm.LinearSVC()
-clf = LogisticRegression(penalty='l2')
+clf = svm.LinearSVC()
+#clf = LogisticRegression(penalty='l2', C=10)
 #clf = RandomForestClassifier(n_estimators = 10, max_features='sqrt')
 #clf = ExtraTreesClassifier()
 #params = {

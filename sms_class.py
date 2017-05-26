@@ -240,7 +240,7 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, parameters=None,
 
         model = Pipeline([
             ('vect', TfidfVectorizer(preprocessor=NLTKPreprocessor(stem=True),
-                lowercase=True, stop_words='english', ngram_range=(2,2))
+                lowercase=True, stop_words='english', ngram_range=(1,2))
             ),
             ('classif', classifier),
         ])

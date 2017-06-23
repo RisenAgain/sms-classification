@@ -4,7 +4,7 @@ bz2file==0.98
 cycler==0.10.0
 gensim==2.1.0
 matplotlib==2.0.2
-nltk==3.2.2
+nltk==3.2.4
 numpy==1.12.1
 packaging==16.8
 pandas==0.20.1

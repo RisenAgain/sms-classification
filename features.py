@@ -5,6 +5,7 @@ import numpy as np
 import pdb
 import re
 import os
+import editdistance
 modals = set(['can', 'could', 'may', 'might', 'will', 'would', 'shall',
               'should', 'must'])
 questions = set(['who', 'what', 'where', 'when', 'which', 'how', 'why'])
@@ -15,6 +16,13 @@ temporal = set(['meet','tonight', 'today', 'tomorrow', 'min', 'month', 'day',
                 'april','may','june','july','august','september','october','november','december'])
 
 
+def lev_match(ref_list, msg_words):
+    for w in msg_words:
+        for r in ref_list:
+            if editdistance.eval(w, r) <= 2:
+                return 1
+
+
 def personal(x):
     regex = 'my|ours|us|we|i|me'
     if re.search(regex, x):
@@ -23,10 +31,11 @@ def personal(x):
 
 
 def fire(x):
-    regex = 'fire|smoke|flame|burn|caught|evacu|explo| blaze| kill | injure | destroy| ignite '
+    regex = 'fire|smoke|flame|burn|caught|evacu|explo|blaze|kill|injure|destroy|ignite '
     z = re.findall(regex, x)
     if z:
         return len(z)
+
     return 0
 
 
@@ -70,12 +79,17 @@ def meet_suggest(x):
 
 def date(x):
     words = set(x.split())
-    if len(words.intersection(temporal)) > 0:
+    match = list(words.intersection(temporal))
+    if len(match) > 0:
+        return 1
+    if lev_match(temporal, words):
         return 1
     if\
     re.search('[0-9]-[0-9]|morning|afternoon|evening|midnight|month|day|year|week|[0-9]\.[0-9]|[0-9]\s*[ap]m|[0-9]\s*[ap].m|[0-9]\s*min|[0-9]\s*hours|[0-9]:[0-9]|[0-9]\s*today|tomorrow|0th|[4-9]th|1st|2nd|3rd|[0-9]/[0-9]|o\'clock', x):
         return 1
     return 0
+
+
 def msg_len_word(x):
     return len(x)
 

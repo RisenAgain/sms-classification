@@ -1,8 +1,10 @@
-# -*- coding: utf-8 -*-
 import pandas as pd
 import pdb, sys, traceback
+import re
 import numpy as np
 import scipy as sp
+import logging
+import pickle
 from nltk.stem.porter import *
 from sklearn import svm
 from sklearn.pipeline import Pipeline, make_pipeline
@@ -24,9 +26,13 @@ from lib import NLTKPreprocessor, analysis, feature_importances
 from sklearn.ensemble import GradientBoostingClassifier
 import matplotlib.pyplot as plt
 import argparse
-
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 cat_map = {1: 'Emergency', 2: 'To-Do', 3: 'General'}
+sub_cat_map = {11: 'E_Fire', 12: 'E_Health', 13: 'E_Personal', 14: 'E_Police',\
+                21: 'TD_Event', 22: 'TD_Non_Event', 23: 'TD_Urgent_Callback',
+               24: 'TD_Urgent_NonCallBack', 31: 'G_General'}
 clf_map = {
             1: LogisticRegression(penalty='l2', C=10),
             2: RandomForestClassifier(n_estimators = 100, max_features='sqrt'),
@@ -35,12 +41,26 @@ clf_map = {
 
 def process_data(train, test, val, args):
     filter_col = 'Category'
+    exclude_list_str = []
     if args.level == 2:
+        exclude_list_str = [sub_cat_map[args.level*10+i] for i in args.exclude]
         filter_list = [cat_map[args.top_level]]
+        # Extract Data of a single top-level category
         train = train[train["Category"].isin(filter_list)]
         test = test[test["Category"].isin(filter_list)]
         val = val[val["Category"].isin(filter_list)]
+        
+        # Exclude sub-categories if specified
+        train = train[~train["Sub-Category"].isin(exclude_list_str)]
+        test = test[~test["Sub-Category"].isin(exclude_list_str)]
+        val = val[~val["Sub-Category"].isin(exclude_list_str)]
         filter_col = 'Sub-Category'
+    else:
+        exclude_list_str = [cat_map[i] for i in args.exclude]
+        # exclude top-level categories if specified
+        train = train[~train["Category"].isin(exclude_list_str)]
+        test = test[~test["Category"].isin(exclude_list_str)]
+        val = val[~val["Category"].isin(exclude_list_str)]
     
     X_train = train
     y_train = train[filter_col]
@@ -48,9 +68,11 @@ def process_data(train, test, val, args):
     y_test = test[filter_col]
     X_val = val
     y_val = val[filter_col]
-    
-    build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val , args,
-        clf_map[args.clf], None)
+    if args.predict:
+        y_preds = load_and_test(X_test, y_test, args)
+    else:
+        build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val , args,
+            clf_map[args.clf], None)
 
 
 def plot_feat(feats, labels, encoder, y, title):
@@ -109,10 +131,16 @@ def plot_surf(clf, X, y):
 
     plt.show()
 
-def generate_train_test(X_train, X_test, y_train, y_test):
-    Xtr, ytr = one_vs_all_classes(X_train, y_train, 2)
-    Xte, yte = one_vs_all_classes(X_test, y_test, 2)
-    return Xtr, Xte, ytr, yte
+
+def generate_labels(y_train, y_test, y_val):
+    # Label encode the targets
+    labels = LabelEncoder()
+    y_train = labels.fit_transform(y_train)
+    y_test = labels.transform(y_test)
+    y_val = labels.transform(y_val)
+    print(labels.classes_)
+    return labels, y_train, y_test, y_val
+
 
 def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False):
     y_preds = model.predict(Xte)
@@ -132,6 +160,7 @@ def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False)
             miss_data['Classifier Label'] = misc_labels[df[index] == sc]
             miss_data.to_csv(sc.lower(), sep = '\t')
 
+
 def feature_selection(model, X_train, y_train, X_test, y_test):
     clf = model.named_steps['classif']
     vect = model.named_steps['vect']
@@ -148,8 +177,32 @@ def feature_selection(model, X_train, y_train, X_test, y_test):
     clf.score(Xte, y_test)
 
 
-def one_vs_all_classes(X, y, class_n):
-    return X.iloc[y!=class_n], y[y!=class_n]
+def sk_to_weka(X, y, header, filename = 'weka.arff'):
+    f = open(filename, 'w')
+    f.write('@RELATION SMS\n\n')
+    for h in header[:-1]:
+        f.write('@ATTRIBUTE {} REAL\n'.format(h))
+    f.write('@ATTRIBUTE class {{{}}}\n\n@DATA\n'.format(','.join(header[-1])))
+    for idx, x in enumerate(X):
+        line = ','.join(map(lambda s: str(s), x)) + ',' + str(header[-1][y[idx]]) + '\n'
+        f.write(line)
+    f.close()
+
+
+def generate_features(transformer, X):
+    vectors = np.array(gen_msg_features(X))
+    X_mat = transformer.transform(X)
+    X_mat = sp.sparse.hstack((X_mat, vectors[1]), format='csr')
+    return [X_mat, vectors[0]]
+
+
+def load_and_test(X_test, y_test, args):
+    labels, y_test, _, _ = generate_labels(y_test, [], [])
+    model = pickle.load(open('_'.join(sorted(labels.classes_))+'.model', 'rb'))
+
+    X_test_mat, f_test_labels = generate_features(model['vect'], X_test["Message"])
+    y_preds = model['cls'].predict(X_test_mat)
+    return y_preds
 
 
 def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
@@ -185,45 +238,60 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
             model.fit(X_train, y_train)
             print(model.score(X_test, y_test))
         return model
-
-    # Label encode the targets
-    labels = LabelEncoder()
-    y_train = labels.fit_transform(y_train)
-    print(labels.classes_)
-    try:
-        y_test = labels.fit_transform(y_test)
-        y_val = labels.fit_transform(y_val)
-    except:
-        type, value, tb = sys.exc_info()
-        traceback.print_exc()
-        pdb.post_mortem(tb)
+    
+    
+    labels, y_train, y_test, y_val = generate_labels(y_train, y_test, y_val)
+    #try:
+    #    y_test = labels.fit_transform(y_test)
+    #    y_val = labels.fit_transform(y_val)
+    #except:
+    #    type, value, tb = sys.exc_info()
+    #    traceback.print_exc()
+    #    pdb.post_mortem(tb)
     
     Xtr, Xte, ytr, yte = X_train, X_test, y_train, y_test
     vectors_train = np.array(gen_msg_features(Xtr["Message"]))
     vectors_test = np.array(gen_msg_features(Xte["Message"]))
     vectors_val = np.array(gen_msg_features(X_val["Message"]))
     
-    #model = build(classifier, list(Xtr["Message"]), ytr, list(Xte["Message"]), yte)
-    #analysis(model, Xte, yte)
-    
     prep = NLTKPreprocessor(stem=True)
     vect = TfidfVectorizer(preprocessor=prep,
                 lowercase=True, stop_words=None, ngram_range=(1,2))
-    X_tr_mat = vect.fit_transform(Xtr["Message"])
-    X_te_mat = vect.transform(Xte["Message"])
-    X_val_mat = vect.transform(X_val["Message"])
-    
-    X_tr_mat = sp.sparse.hstack((X_tr_mat, vectors_train[1]), format='csr')
-    X_te_mat = sp.sparse.hstack((X_te_mat, vectors_test[1]), format='csr')
-    X_val_mat = sp.sparse.hstack((X_val_mat, vectors_val[1]), format='csr')
+    vect.fit_transform(Xtr["Message"])
+
+    X_tr_mat, f_tr_labels = generate_features(vect, Xtr["Message"])
+    X_te_mat, f_te_labels = generate_features(vect, Xte["Message"])
+    X_val_mat, f_val_labels = generate_features(vect, X_val["Message"])
+    # write train to weka for feature analysis
+    if args.to_weka:
+        header_train = f_tr_labels.tolist()
+        header_train.append(labels.classes_)
+        sk_to_weka(vectors_train[1], ytr, header_train,\
+                   '_'.join(labels.classes_)+'_features.arff')
     
     cls = classifier
     cls.fit(X_tr_mat, ytr)
     
     y_pred = (cls.predict(X_val_mat))
     print(confusion_matrix(y_val, y_pred))
-    print(clsr(y_val, y_pred))
+    conf_f_name = '_'.join(labels.classes_) + '_cfm.tsv'
     
+    np.savetxt(conf_f_name, confusion_matrix(y_val, y_pred), delimiter='\t',\
+               fmt="%2.1d", header='\t'.join(labels.classes_))
+    scores = clsr(y_val, y_pred)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+
+    print(scores)
+    with open('_'.join(labels.classes_) + '_scores.tsv', 'w') as f:
+        f.write('\t'+scores)
+    
+    fitted_model = {'vect': vect, 'cls': cls}
+    logger.info("Saving model")
+    pickle.dump(fitted_model, open('_'.join(sorted(labels.classes_))+'.model', 'wb'))
     #misclassifications_class(cls, X_val_mat, y_val, X_val,
     #                         labels, 1, True)
     if args.with_graph:
@@ -232,23 +300,28 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
 
 
 if __name__ == "__main__":
-    train = pd.read_csv("trainFile", header=0, \
+    train = pd.read_csv("trainFile.utf8", header=0, delimiter="\t")
+    test = pd.read_csv("tuneFile.utf8", header=0, \
                         delimiter="\t", quoting=3)
-    test = pd.read_csv("tuneFile", header=0, \
-                        delimiter="\t", quoting=3)
-    val = pd.read_csv("testFile", delimiter="\t")
+    val = pd.read_csv("testFile.utf8", delimiter="\t")
     
     parser = argparse.ArgumentParser(description='Classify SMS messages')
     parser.add_argument('--level', type=int, choices=(1, 2), default=1,
                         help="Level to classify on")
-    parser.add_argument('--clf', type=int, choices=(1, 2, 3), default=1,
-                        help="Classifier: Logistic Regression, Random Forest,\
-                        GBC")
     parser.add_argument('--top_level', type=int, choices=(1, 2, 3), default=1,
                         help="Top level category to filter if level 2,\
                         Emergency, To-Do, General")
+    parser.add_argument('--exclude', type=int, nargs="+",default=[],\
+                        help="Categories or Sub-Categories to exclude")
+    parser.add_argument('--clf', type=int, choices=(1, 2, 3), default=1,
+                        help="Classifier: Logistic Regression, Random Forest,\
+                        GBC")
     parser.add_argument('--with_graph', action='store_true',
                         help="Whether to print feature graph")
+    parser.add_argument('--to_weka', action='store_true',
+                        help="Whether to print feature graph")
+    parser.add_argument('--predict', action='store_true',
+                        help="Whether to generate preds from stored model")
     parser.parse_args()
     args = parser.parse_args()
     process_data(train, test, val, args)

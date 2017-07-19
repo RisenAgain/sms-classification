@@ -151,8 +151,12 @@ def gen_msg_features(X):
     X = list(map(lambda a:re.sub('[\']', ' ',a), X))
     X = list(map(lambda a:re.sub('[,]', ' , ',a), X))
     #X = list(map(lambda a:re.sub('\s+', '\s',a), X))
-    feature_names = [request_immedi, puncts, msg_len_char, msg_len_word, date,
-                     call, numeric, meet_suggest, health, fire  ]
+    feature_names = [request_immedi, puncts, msg_len_char, msg_len_word,
+                     call, numeric]
+    top_level = [emer, todo]
+    second_level = [date, meet_suggest, health, fire]
+    feature_names += top_level
+
     names = np.array(list(map(lambda a: a.__qualname__, feature_names)))
     feature_set = np.empty((0,len(names)))
     for x in X:

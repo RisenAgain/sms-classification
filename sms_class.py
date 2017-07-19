@@ -23,9 +23,12 @@ from sklearn.metrics import confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from features import gen_msg_features
 from lib import NLTKPreprocessor, analysis, feature_importances
-from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
+from sklearn import svm
 import matplotlib.pyplot as plt
 import argparse
+import TensorLogitImpl as tfl
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -36,8 +39,11 @@ sub_cat_map = {11: 'E_Fire', 12: 'E_Health', 13: 'E_Personal', 14: 'E_Police',\
 clf_map = {
             1: LogisticRegression(penalty='l2', C=10),
             2: RandomForestClassifier(n_estimators = 100, max_features='sqrt'),
-            3: GradientBoostingClassifier(n_estimators=100, learning_rate=1.0,max_depth=1, random_state=0)
+            3: svm.LinearSVC(),
+            4: tfl.tf_logitregression('tfl_model')
         }
+clf_map[5] = VotingClassifier(estimators=[('0', clf_map[1]), ('1', clf_map[2]),\
+                                         ('2', clf_map[3])])
 
 def process_data(train, test, val, args):
     filter_col = 'Category'
@@ -70,6 +76,7 @@ def process_data(train, test, val, args):
     y_val = val[filter_col]
     if args.predict:
         y_preds = load_and_test(X_test, y_test, args)
+        
     else:
         build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val , args,
             clf_map[args.clf], None)
@@ -149,7 +156,7 @@ def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False)
     df = msgs.iloc[misc]
     misc_labels = label_enc.inverse_transform(y_preds)[misc]
     index = 'Category'
-    if level == 1:
+    if level == 2:
         index = 'Sub-Category'
     for sc in label_enc.classes_:
         total = msgs[msgs[index] == sc].shape[0]
@@ -158,7 +165,7 @@ def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False)
         if wtf:
             miss_data = df[df[index] == sc]
             miss_data['Classifier Label'] = misc_labels[df[index] == sc]
-            miss_data.to_csv(sc.lower(), sep = '\t')
+            miss_data.to_csv(sc.lower()+'.tsv', sep = '\t')
 
 
 def feature_selection(model, X_train, y_train, X_test, y_test):
@@ -198,10 +205,15 @@ def generate_features(transformer, X):
 
 def load_and_test(X_test, y_test, args):
     labels, y_test, _, _ = generate_labels(y_test, [], [])
-    model = pickle.load(open('_'.join(sorted(labels.classes_))+'.model', 'rb'))
+    model = pickle.load(open('_'.join(sorted(labels.classes_))+'LogisticRe.model', 'rb'))
+
+    X_test = pd.read_csv('SMS/COCA/tsv/train.tsv', delimiter="\t")
 
     X_test_mat, f_test_labels = generate_features(model['vect'], X_test["Message"])
     y_preds = model['cls'].predict(X_test_mat)
+    t_lb = labels.inverse_transform(y_preds)
+    X_test["Category-Predicted"] = t_lb
+    X_test.to_csv('_'.join(sorted(labels.classes_)+'.labels'), sep='\t')
     return y_preds
 
 
@@ -270,6 +282,11 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
                    '_'.join(labels.classes_)+'_features.arff')
     
     cls = classifier
+    if args.clf >= 4:
+        X_tr_mat = X_tr_mat.toarray()
+        X_te_mat = X_te_mat.toarray()
+        X_val_mat = X_val_mat.toarray()
+    
     cls.fit(X_tr_mat, ytr)
     
     y_pred = (cls.predict(X_val_mat))
@@ -289,21 +306,26 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     with open('_'.join(labels.classes_) + '_scores.tsv', 'w') as f:
         f.write('\t'+scores)
     
-    fitted_model = {'vect': vect, 'cls': cls}
-    logger.info("Saving model")
-    pickle.dump(fitted_model, open('_'.join(sorted(labels.classes_))+'.model', 'wb'))
+    if args.save:
+        fitted_model = {'vect': vect, 'cls': cls}
+        logger.info("Saving model")
+        pickle.dump(fitted_model,\
+                    open('_'.join(sorted(labels.classes_))+'_'+str(cls)[0:10]+'.model', 'wb'))
     #misclassifications_class(cls, X_val_mat, y_val, X_val,
-    #                         labels, 1, True)
+    #                         labels, args.level, True)
     if args.with_graph:
         plot_feat(vectors_val[1], vectors_val[0], labels, y_val,
                     'Average Feature value for each class')
 
 
 if __name__ == "__main__":
-    train = pd.read_csv("trainFile.utf8", header=0, delimiter="\t")
-    test = pd.read_csv("tuneFile.utf8", header=0, \
+    trainF = "trainFile.utf8"
+    tuneF = "tuneFile.utf8"
+    testF = "testFile.utf8"
+    train = pd.read_csv(trainF, header=0, delimiter="\t")
+    test = pd.read_csv(tuneF, header=0, \
                         delimiter="\t", quoting=3)
-    val = pd.read_csv("testFile.utf8", delimiter="\t")
+    val = pd.read_csv(testF, delimiter="\t")
     
     parser = argparse.ArgumentParser(description='Classify SMS messages')
     parser.add_argument('--level', type=int, choices=(1, 2), default=1,
@@ -313,15 +335,18 @@ if __name__ == "__main__":
                         Emergency, To-Do, General")
     parser.add_argument('--exclude', type=int, nargs="+",default=[],\
                         help="Categories or Sub-Categories to exclude")
-    parser.add_argument('--clf', type=int, choices=(1, 2, 3), default=1,
+    parser.add_argument('--clf', type=int, choices=(1, 2, 3, 4, 5, 6, 7), default=1,
                         help="Classifier: Logistic Regression, Random Forest,\
                         GBC")
     parser.add_argument('--with_graph', action='store_true',
                         help="Whether to print feature graph")
     parser.add_argument('--to_weka', action='store_true',
                         help="Whether to print feature graph")
+    parser.add_argument('--save', action='store_true',
+                        help="Whether to save the model")
     parser.add_argument('--predict', action='store_true',
                         help="Whether to generate preds from stored model")
+
     parser.parse_args()
     args = parser.parse_args()
     process_data(train, test, val, args)

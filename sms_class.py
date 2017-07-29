@@ -20,14 +20,15 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.metrics import confusion_matrix
+from sklearn.preprocessing import label_binarize
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_curve, auc
 from features import gen_msg_features
 from lib import NLTKPreprocessor, analysis, feature_importances
 from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from sklearn import svm
 import matplotlib.pyplot as plt
 import argparse
-import TensorLogitImpl as tfl
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,11 +40,38 @@ sub_cat_map = {11: 'E_Fire', 12: 'E_Health', 13: 'E_Personal', 14: 'E_Police',\
 clf_map = {
             1: LogisticRegression(penalty='l2', C=10),
             2: RandomForestClassifier(n_estimators = 100, max_features='sqrt'),
-            3: svm.LinearSVC(),
-            4: tfl.tf_logitregression('tfl_model')
+            3: svm.LinearSVC()
         }
 clf_map[5] = VotingClassifier(estimators=[('0', clf_map[1]), ('1', clf_map[2]),\
                                          ('2', clf_map[3])])
+
+def roc_auc(X_test, y_test, cls):
+    y_preds = cls.decision_function(X_test)
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+    n_classes = y_preds.shape[1]
+    y = label_binarize(y_test, classes=[0,1,2])
+    #pdb.set_trace()
+    for i in range(n_classes):
+        fpr[i], tpr[i], _ = roc_curve(y[:, i], y_preds[:, i])
+        roc_auc[i] = auc(fpr[i], tpr[i])
+    plt.figure()
+    #plt.plot(fpr["micro"], tpr["micro"],
+    #        label='micro-average ROC curve (area = {0:0.2f})'
+    #            ''.format(roc_auc["micro"]))
+    for i in range(n_classes):
+        plt.plot(fpr[i], tpr[i], label='ROC curve of class {0} (area = {1:0.2f})'
+                                       ''.format(i, roc_auc[i]))
+
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Some extension of Receiver operating characteristic to multi-class')
+    plt.legend(loc="lower right")
+    plt.show()
 
 def process_data(train, test, val, args):
     filter_col = 'Category'
@@ -205,15 +233,16 @@ def generate_features(transformer, X):
 
 def load_and_test(X_test, y_test, args):
     labels, y_test, _, _ = generate_labels(y_test, [], [])
-    model = pickle.load(open('_'.join(sorted(labels.classes_))+'LogisticRe.model', 'rb'))
 
-    X_test = pd.read_csv('SMS/COCA/tsv/train.tsv', delimiter="\t")
+    model = pickle.load(open(args.model, 'rb'))
+
+    X_test = pd.read_csv(args.test, delimiter="\t")
 
     X_test_mat, f_test_labels = generate_features(model['vect'], X_test["Message"])
     y_preds = model['cls'].predict(X_test_mat)
     t_lb = labels.inverse_transform(y_preds)
     X_test["Category-Predicted"] = t_lb
-    X_test.to_csv('_'.join(sorted(labels.classes_)+'.labels'), sep='\t')
+    X_test.to_csv(args.test+'.labels', sep='\t')
     return y_preds
 
 
@@ -251,8 +280,8 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
             print(model.score(X_test, y_test))
         return model
     
-    
     labels, y_train, y_test, y_val = generate_labels(y_train, y_test, y_val)
+    #labels = LabelEncoder()
     #try:
     #    y_test = labels.fit_transform(y_test)
     #    y_val = labels.fit_transform(y_val)
@@ -316,18 +345,15 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     if args.with_graph:
         plot_feat(vectors_val[1], vectors_val[0], labels, y_val,
                     'Average Feature value for each class')
+    if args.roc:
+        roc_auc(X_val_mat, y_val, cls)
 
 
-if __name__ == "__main__":
-    trainF = "trainFile.utf8"
-    tuneF = "tuneFile.utf8"
-    testF = "testFile.utf8"
-    train = pd.read_csv(trainF, header=0, delimiter="\t")
-    test = pd.read_csv(tuneF, header=0, \
-                        delimiter="\t", quoting=3)
-    val = pd.read_csv(testF, delimiter="\t")
-    
+if __name__ == "__main__":    
     parser = argparse.ArgumentParser(description='Classify SMS messages')
+
+    parser.add_argument('--data', type=str,
+                        help="Data file prefix")
     parser.add_argument('--level', type=int, choices=(1, 2), default=1,
                         help="Level to classify on")
     parser.add_argument('--top_level', type=int, choices=(1, 2, 3), default=1,
@@ -344,9 +370,25 @@ if __name__ == "__main__":
                         help="Whether to print feature graph")
     parser.add_argument('--save', action='store_true',
                         help="Whether to save the model")
+    parser.add_argument('--model', type=str,
+                        help="Model filename, use with --predict")
+    parser.add_argument('--test', type=str,
+                        help="test filename, use with --predict")
     parser.add_argument('--predict', action='store_true',
+                        help="Whether to generate preds from stored model")
+    parser.add_argument('--roc', action='store_true',
                         help="Whether to generate preds from stored model")
 
     parser.parse_args()
     args = parser.parse_args()
+    
+    trainF =args.data + "train.tsv"
+    tuneF = args.data + "tune.tsv"    
+    testF = args.data + "test.tsv"
+    
+    train = pd.read_csv(trainF, header=0, delimiter="\t")[0:10]
+    test = pd.read_csv(tuneF, header=0, \
+                       delimiter="\t", quoting=3)[0:10]
+    val = pd.read_csv(testF, delimiter="\t")[0:10]
+    
     process_data(train, test, val, args)

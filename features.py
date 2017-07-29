@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 from sklearn.preprocessing import RobustScaler, StandardScaler
+from nltk.parse.stanford import StanfordParser
+from nltk import tree
 import pandas as pd
 import numpy as np
 import pdb
@@ -14,6 +16,34 @@ temporal = set(['meet','tonight', 'today', 'tomorrow', 'min', 'month', 'day',
                'wednesday','thursday', 'friday',
                 'saturday','january','february','march',
                 'april','may','june','july','august','september','october','november','december'])
+
+st_parser = StanfordParser('libs/stanford-parser-full-2016-10-31/stanford-parser.jar',
+                        'libs/stanford-parser-full-2016-10-31/stanford-parser-3.7.0-models.jar')
+
+
+def traverse_tree(deps, level, nodes = {}):
+    if level > 4:
+        return 0
+    for subtree in deps:
+        if type(subtree) == tree.Tree and subtree.label() == 'S':
+            ref = 0
+            for child in subtree:
+                if child.label() == 'NP':
+                    ref = ref | 2
+                if child.label() == 'VP':
+                    ref = ref | 1
+            return ref
+        else:
+            return 0
+        if type(subtree) == tree.Tree:
+            return traverse_tree(subtree, level + 1)
+
+
+def parser(x):
+    deps = st_parser.parse_one([x])
+    status = traverse_tree(deps, 0)
+    val = 1 if status == 1 else 0
+    return val
 
 
 def lev_match(ref_list, msg_words):
@@ -152,7 +182,7 @@ def gen_msg_features(X):
     X = list(map(lambda a:re.sub('[,]', ' , ',a), X))
     #X = list(map(lambda a:re.sub('\s+', '\s',a), X))
     feature_names = [request_immedi, puncts, msg_len_char, msg_len_word,
-                     call, numeric]
+                     call, numeric, parser]
     top_level = [emer, todo]
     second_level = [date, meet_suggest, health, fire]
     feature_names += top_level

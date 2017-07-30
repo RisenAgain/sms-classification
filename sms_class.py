@@ -27,7 +27,7 @@ from features import gen_msg_features
 from lib import NLTKPreprocessor, analysis, feature_importances
 from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from sklearn import svm
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import argparse
 
 logging.basicConfig(level=logging.INFO)
@@ -45,33 +45,33 @@ clf_map = {
 clf_map[5] = VotingClassifier(estimators=[('0', clf_map[1]), ('1', clf_map[2]),\
                                          ('2', clf_map[3])])
 
-def roc_auc(X_test, y_test, cls):
-    y_preds = cls.decision_function(X_test)
-    fpr = dict()
-    tpr = dict()
-    roc_auc = dict()
-    n_classes = y_preds.shape[1]
-    y = label_binarize(y_test, classes=[0,1,2])
-    #pdb.set_trace()
-    for i in range(n_classes):
-        fpr[i], tpr[i], _ = roc_curve(y[:, i], y_preds[:, i])
-        roc_auc[i] = auc(fpr[i], tpr[i])
-    plt.figure()
-    #plt.plot(fpr["micro"], tpr["micro"],
-    #        label='micro-average ROC curve (area = {0:0.2f})'
-    #            ''.format(roc_auc["micro"]))
-    for i in range(n_classes):
-        plt.plot(fpr[i], tpr[i], label='ROC curve of class {0} (area = {1:0.2f})'
-                                       ''.format(i, roc_auc[i]))
-
-    plt.plot([0, 1], [0, 1], 'k--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Some extension of Receiver operating characteristic to multi-class')
-    plt.legend(loc="lower right")
-    plt.show()
+#def roc_auc(X_test, y_test, cls):
+#    y_preds = cls.decision_function(X_test)
+#    fpr = dict()
+#    tpr = dict()
+#    roc_auc = dict()
+#    n_classes = y_preds.shape[1]
+#    y = label_binarize(y_test, classes=[0,1,2])
+#    #pdb.set_trace()
+#    for i in range(n_classes):
+#        fpr[i], tpr[i], _ = roc_curve(y[:, i], y_preds[:, i])
+#        roc_auc[i] = auc(fpr[i], tpr[i])
+#    plt.figure()
+#    #plt.plot(fpr["micro"], tpr["micro"],
+#    #        label='micro-average ROC curve (area = {0:0.2f})'
+#    #            ''.format(roc_auc["micro"]))
+#    for i in range(n_classes):
+#        plt.plot(fpr[i], tpr[i], label='ROC curve of class {0} (area = {1:0.2f})'
+#                                       ''.format(i, roc_auc[i]))
+#
+#    plt.plot([0, 1], [0, 1], 'k--')
+#    plt.xlim([0.0, 1.0])
+#    plt.ylim([0.0, 1.05])
+#    plt.xlabel('False Positive Rate')
+#    plt.ylabel('True Positive Rate')
+#    plt.title('Some extension of Receiver operating characteristic to multi-class')
+#    plt.legend(loc="lower right")
+#    plt.show()
 
 def process_data(train, test, val, args):
     filter_col = 'Category'
@@ -110,61 +110,61 @@ def process_data(train, test, val, args):
             clf_map[args.clf], None)
 
 
-def plot_feat(feats, labels, encoder, y, title):
-    values = []
-    total = []
-    for idx1, id1 in enumerate(labels):
-        f_arr = []
-        for idx2, id2 in enumerate(encoder.classes_):
-            indices = y==idx2
-            f_arr.append(np.mean(feats[indices, idx1], axis=0))
-        values.append(f_arr)
-    for idx, id in enumerate(encoder.classes_):
-        indices = y[y==idx]
-        total.append(len(indices))
-    #values.append(total)
-    # Plot
-    plt.figure()
-    plt.title(title)
-    index = np.arange(len(encoder.classes_))
-    colors = ['r', 'b', 'g', 'y', 'c', 'm', '#c21211', '#000000', '#00aa11',
-              '#22cc22', '#bfe23e']
-    #labels = np.append(labels,'total')
-    for idx1, id1 in enumerate(labels):
-        plt.bar(index+0.05*idx1, values[idx1], width=0.05, color=colors[idx1],
-                align='center', label=id1)
-    x_axis = np.lib.pad(index, (1,1), 'constant',\
-                        constant_values=(-0.4,len(index)-1+0.4))
-    plt.plot(x_axis, [0]*(len(index)+2), color='#000000')
-    plt.xticks(index, encoder.classes_)
-    plt.ylabel('Average Feature value')
-    plt.xlabel('Category')
-    plt.legend()
-    plt.show()
-
-
-def plot_surf(clf, X, y):
-    # http://scikit-learn.org/stable/auto_examples/linear_model/plot_logistic_multinomial.html#sphx-glr-auto-examples-linear-model-plot-logistic-multinomial-py
-    h = 0.1
-    x_min, x_max = X[:, 0].min(), X[:, 0].max()
-    y_min, y_max = X[:, 1].min(), X[:, 1].max()
-    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
-                        np.arange(y_min, y_max, h))
-    Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
-    #pdb.set_trace()
-    Z = Z.reshape(xx.shape)
-    plt.figure()
-    plt.contourf(xx, yy, Z, cmap=plt.cm.Paired)
-    plt.title("Decision surface of LogisticRegression")
-    plt.axis('tight')
-
-    # Plot training points
-    colors = "bry"
-    for i, color in zip(clf.classes_, colors):
-        idx = np.where(y == i)
-        plt.scatter(X[idx, 0], X[idx, 1], c=color, cmap=plt.cm.Paired)
-
-    plt.show()
+#def plot_feat(feats, labels, encoder, y, title):
+#    values = []
+#    total = []
+#    for idx1, id1 in enumerate(labels):
+#        f_arr = []
+#        for idx2, id2 in enumerate(encoder.classes_):
+#            indices = y==idx2
+#            f_arr.append(np.mean(feats[indices, idx1], axis=0))
+#        values.append(f_arr)
+#    for idx, id in enumerate(encoder.classes_):
+#        indices = y[y==idx]
+#        total.append(len(indices))
+#    #values.append(total)
+#    # Plot
+#    plt.figure()
+#    plt.title(title)
+#    index = np.arange(len(encoder.classes_))
+#    colors = ['r', 'b', 'g', 'y', 'c', 'm', '#c21211', '#000000', '#00aa11',
+#              '#22cc22', '#bfe23e']
+#    #labels = np.append(labels,'total')
+#    for idx1, id1 in enumerate(labels):
+#        plt.bar(index+0.05*idx1, values[idx1], width=0.05, color=colors[idx1],
+#                align='center', label=id1)
+#    x_axis = np.lib.pad(index, (1,1), 'constant',\
+#                        constant_values=(-0.4,len(index)-1+0.4))
+#    plt.plot(x_axis, [0]*(len(index)+2), color='#000000')
+#    plt.xticks(index, encoder.classes_)
+#    plt.ylabel('Average Feature value')
+#    plt.xlabel('Category')
+#    plt.legend()
+#    plt.show()
+#
+#
+#def plot_surf(clf, X, y):
+#    # http://scikit-learn.org/stable/auto_examples/linear_model/plot_logistic_multinomial.html#sphx-glr-auto-examples-linear-model-plot-logistic-multinomial-py
+#    h = 0.1
+#    x_min, x_max = X[:, 0].min(), X[:, 0].max()
+#    y_min, y_max = X[:, 1].min(), X[:, 1].max()
+#    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+#                        np.arange(y_min, y_max, h))
+#    Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
+#    #pdb.set_trace()
+#    Z = Z.reshape(xx.shape)
+#    plt.figure()
+#    plt.contourf(xx, yy, Z, cmap=plt.cm.Paired)
+#    plt.title("Decision surface of LogisticRegression")
+#    plt.axis('tight')
+#
+#    # Plot training points
+#    colors = "bry"
+#    for i, color in zip(clf.classes_, colors):
+#        idx = np.where(y == i)
+#        plt.scatter(X[idx, 0], X[idx, 1], c=color, cmap=plt.cm.Paired)
+#
+#    plt.show()
 
 
 def generate_labels(y_train, y_test, y_val):
@@ -386,9 +386,9 @@ if __name__ == "__main__":
     tuneF = args.data + "tune.tsv"    
     testF = args.data + "test.tsv"
     
-    train = pd.read_csv(trainF, header=0, delimiter="\t")[0:10]
+    train = pd.read_csv(trainF, header=0, delimiter="\t")
     test = pd.read_csv(tuneF, header=0, \
-                       delimiter="\t", quoting=3)[0:10]
-    val = pd.read_csv(testF, delimiter="\t")[0:10]
+                       delimiter="\t", quoting=3)
+    val = pd.read_csv(testF, delimiter="\t")
     
     process_data(train, test, val, args)

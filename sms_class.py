@@ -27,7 +27,8 @@ from features import gen_msg_features
 from lib import NLTKPreprocessor, analysis, feature_importances
 from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from sklearn import svm
-#import matplotlib.pyplot as plt
+import multiprocessing as mp
+import matplotlib.pyplot as plt
 import argparse
 
 logging.basicConfig(level=logging.INFO)
@@ -45,33 +46,33 @@ clf_map = {
 clf_map[5] = VotingClassifier(estimators=[('0', clf_map[1]), ('1', clf_map[2]),\
                                          ('2', clf_map[3])])
 
-#def roc_auc(X_test, y_test, cls):
-#    y_preds = cls.decision_function(X_test)
-#    fpr = dict()
-#    tpr = dict()
-#    roc_auc = dict()
-#    n_classes = y_preds.shape[1]
-#    y = label_binarize(y_test, classes=[0,1,2])
-#    #pdb.set_trace()
-#    for i in range(n_classes):
-#        fpr[i], tpr[i], _ = roc_curve(y[:, i], y_preds[:, i])
-#        roc_auc[i] = auc(fpr[i], tpr[i])
-#    plt.figure()
-#    #plt.plot(fpr["micro"], tpr["micro"],
-#    #        label='micro-average ROC curve (area = {0:0.2f})'
-#    #            ''.format(roc_auc["micro"]))
-#    for i in range(n_classes):
-#        plt.plot(fpr[i], tpr[i], label='ROC curve of class {0} (area = {1:0.2f})'
-#                                       ''.format(i, roc_auc[i]))
-#
-#    plt.plot([0, 1], [0, 1], 'k--')
-#    plt.xlim([0.0, 1.0])
-#    plt.ylim([0.0, 1.05])
-#    plt.xlabel('False Positive Rate')
-#    plt.ylabel('True Positive Rate')
-#    plt.title('Some extension of Receiver operating characteristic to multi-class')
-#    plt.legend(loc="lower right")
-#    plt.show()
+def roc_auc(X_test, y_test, cls):
+    y_preds = cls.decision_function(X_test)
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+    n_classes = y_preds.shape[1]
+    y = label_binarize(y_test, classes=[0,1,2])
+    #pdb.set_trace()
+    for i in range(n_classes):
+        fpr[i], tpr[i], _ = roc_curve(y[:, i], y_preds[:, i])
+        roc_auc[i] = auc(fpr[i], tpr[i])
+    plt.figure()
+    #plt.plot(fpr["micro"], tpr["micro"],
+    #        label='micro-average ROC curve (area = {0:0.2f})'
+    #            ''.format(roc_auc["micro"]))
+    for i in range(n_classes):
+        plt.plot(fpr[i], tpr[i], label='ROC curve of class {0} (area = {1:0.2f})'
+                                       ''.format(i, roc_auc[i]))
+
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Some extension of Receiver operating characteristic to multi-class')
+    plt.legend(loc="lower right")
+    plt.show()
 
 def process_data(train, test, val, args):
     filter_col = 'Category'
@@ -102,69 +103,66 @@ def process_data(train, test, val, args):
     y_test = test[filter_col]
     X_val = val
     y_val = val[filter_col]
-    if args.predict:
-        y_preds = load_and_test(X_test, y_test, args)
         
-    else:
-        build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val , args,
-            clf_map[args.clf], None)
+    build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val , args,
+        clf_map[args.clf], None)
 
 
-#def plot_feat(feats, labels, encoder, y, title):
-#    values = []
-#    total = []
-#    for idx1, id1 in enumerate(labels):
-#        f_arr = []
-#        for idx2, id2 in enumerate(encoder.classes_):
-#            indices = y==idx2
-#            f_arr.append(np.mean(feats[indices, idx1], axis=0))
-#        values.append(f_arr)
-#    for idx, id in enumerate(encoder.classes_):
-#        indices = y[y==idx]
-#        total.append(len(indices))
-#    #values.append(total)
-#    # Plot
-#    plt.figure()
-#    plt.title(title)
-#    index = np.arange(len(encoder.classes_))
-#    colors = ['r', 'b', 'g', 'y', 'c', 'm', '#c21211', '#000000', '#00aa11',
-#              '#22cc22', '#bfe23e']
-#    #labels = np.append(labels,'total')
-#    for idx1, id1 in enumerate(labels):
-#        plt.bar(index+0.05*idx1, values[idx1], width=0.05, color=colors[idx1],
-#                align='center', label=id1)
-#    x_axis = np.lib.pad(index, (1,1), 'constant',\
-#                        constant_values=(-0.4,len(index)-1+0.4))
-#    plt.plot(x_axis, [0]*(len(index)+2), color='#000000')
-#    plt.xticks(index, encoder.classes_)
-#    plt.ylabel('Average Feature value')
-#    plt.xlabel('Category')
-#    plt.legend()
-#    plt.show()
-#
-#
-#def plot_surf(clf, X, y):
-#    # http://scikit-learn.org/stable/auto_examples/linear_model/plot_logistic_multinomial.html#sphx-glr-auto-examples-linear-model-plot-logistic-multinomial-py
-#    h = 0.1
-#    x_min, x_max = X[:, 0].min(), X[:, 0].max()
-#    y_min, y_max = X[:, 1].min(), X[:, 1].max()
-#    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
-#                        np.arange(y_min, y_max, h))
-#    Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
-#    #pdb.set_trace()
-#    Z = Z.reshape(xx.shape)
-#    plt.figure()
-#    plt.contourf(xx, yy, Z, cmap=plt.cm.Paired)
-#    plt.title("Decision surface of LogisticRegression")
-#    plt.axis('tight')
-#
-#    # Plot training points
-#    colors = "bry"
-#    for i, color in zip(clf.classes_, colors):
-#        idx = np.where(y == i)
-#        plt.scatter(X[idx, 0], X[idx, 1], c=color, cmap=plt.cm.Paired)
-#
-#    plt.show()
+def plot_feat(feats, labels, encoder, y, title):
+    values = []
+    total = []
+    for idx1, id1 in enumerate(labels):
+        f_arr = []
+        for idx2, id2 in enumerate(encoder.classes_):
+            indices = y==idx2
+            f_arr.append(np.mean(feats[indices, idx1], axis=0))
+        values.append(f_arr)
+    for idx, id in enumerate(encoder.classes_):
+        indices = y[y==idx]
+        total.append(len(indices))
+    #values.append(total)
+    # Plot
+    plt.figure()
+    plt.title(title)
+    index = np.arange(len(encoder.classes_))
+    colors = ['r', 'b', 'g', 'y', 'c', 'm', '#c21211', '#000000', '#00aa11',
+              '#22cc22', '#bfe23e']
+    #labels = np.append(labels,'total')
+    for idx1, id1 in enumerate(labels):
+        plt.bar(index+0.05*idx1, values[idx1], width=0.05, color=colors[idx1],
+                align='center', label=id1)
+    x_axis = np.lib.pad(index, (1,1), 'constant',\
+                        constant_values=(-0.4,len(index)-1+0.4))
+    plt.plot(x_axis, [0]*(len(index)+2), color='#000000')
+    plt.xticks(index, encoder.classes_)
+    plt.ylabel('Average Feature value')
+    plt.xlabel('Category')
+    plt.legend()
+    plt.show()
+
+
+def plot_surf(clf, X, y):
+    # http://scikit-learn.org/stable/auto_examples/linear_model/plot_logistic_multinomial.html#sphx-glr-auto-examples-linear-model-plot-logistic-multinomial-py
+    h = 0.1
+    x_min, x_max = X[:, 0].min(), X[:, 0].max()
+    y_min, y_max = X[:, 1].min(), X[:, 1].max()
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                        np.arange(y_min, y_max, h))
+    Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
+    #pdb.set_trace()
+    Z = Z.reshape(xx.shape)
+    plt.figure()
+    plt.contourf(xx, yy, Z, cmap=plt.cm.Paired)
+    plt.title("Decision surface of LogisticRegression")
+    plt.axis('tight')
+
+    # Plot training points
+    colors = "bry"
+    for i, color in zip(clf.classes_, colors):
+        idx = np.where(y == i)
+        plt.scatter(X[idx, 0], X[idx, 1], c=color, cmap=plt.cm.Paired)
+
+    plt.show()
 
 
 def generate_labels(y_train, y_test, y_val):
@@ -224,8 +222,8 @@ def sk_to_weka(X, y, header, filename = 'weka.arff'):
     f.close()
 
 
-def generate_features(transformer, X):
-    vectors = np.array(gen_msg_features(X))
+def generate_features(transformer, X, type=''):
+    vectors = np.array(gen_msg_features(X, type))
     X_mat = transformer.transform(X)
     X_mat = sp.sparse.hstack((X_mat, vectors[1]), format='csr')
     return [X_mat, vectors[0]]
@@ -241,6 +239,7 @@ def load_and_test(X_test, y_test, args):
     X_test_mat, f_test_labels = generate_features(model['vect'], X_test["Message"])
     y_preds = model['cls'].predict(X_test_mat)
     t_lb = labels.inverse_transform(y_preds)
+    pdb.set_trace()
     X_test["Category-Predicted"] = t_lb
     X_test.to_csv(args.test+'.labels', sep='\t')
     return y_preds
@@ -291,18 +290,18 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     #    pdb.post_mortem(tb)
     
     Xtr, Xte, ytr, yte = X_train, X_test, y_train, y_test
-    vectors_train = np.array(gen_msg_features(Xtr["Message"]))
-    vectors_test = np.array(gen_msg_features(Xte["Message"]))
-    vectors_val = np.array(gen_msg_features(X_val["Message"]))
+    vectors_train = np.array(gen_msg_features(Xtr["Message"],args.data+'train'))
+    vectors_test = np.array(gen_msg_features(Xte["Message"], args.data+'tune' ))
+    vectors_val = np.array(gen_msg_features(X_val["Message"], args.data+'test'))
     
     prep = NLTKPreprocessor(stem=True)
     vect = TfidfVectorizer(preprocessor=prep,
                 lowercase=True, stop_words=None, ngram_range=(1,2))
     vect.fit_transform(Xtr["Message"])
 
-    X_tr_mat, f_tr_labels = generate_features(vect, Xtr["Message"])
-    X_te_mat, f_te_labels = generate_features(vect, Xte["Message"])
-    X_val_mat, f_val_labels = generate_features(vect, X_val["Message"])
+    X_tr_mat, f_tr_labels = generate_features(vect, Xtr["Message"], args.data+'train')
+    X_te_mat, f_te_labels = generate_features(vect, Xte["Message"], args.data+'tune')
+    X_val_mat, f_val_labels = generate_features(vect, X_val["Message"], args.data+'test')
     # write train to weka for feature analysis
     if args.to_weka:
         header_train = f_tr_labels.tolist()
@@ -381,14 +380,19 @@ if __name__ == "__main__":
 
     parser.parse_args()
     args = parser.parse_args()
-    
-    trainF =args.data + "train.tsv"
-    tuneF = args.data + "tune.tsv"    
-    testF = args.data + "test.tsv"
-    
-    train = pd.read_csv(trainF, header=0, delimiter="\t")
-    test = pd.read_csv(tuneF, header=0, \
-                       delimiter="\t", quoting=3)
-    val = pd.read_csv(testF, delimiter="\t")
-    
-    process_data(train, test, val, args)
+     
+    if args.predict:
+        X_test = pd.read_csv(args.test, header=0, delimiter='\t')
+        y_test = X_test['Category']
+        y_preds = load_and_test(X_test, y_test, args)
+    else:
+        trainF =args.data + "train.tsv"
+        tuneF = args.data + "tune.tsv"    
+        testF = args.data + "test.tsv"
+        
+        train = pd.read_csv(trainF, header=0, delimiter="\t")
+        test = pd.read_csv(tuneF, header=0, \
+                           delimiter="\t", quoting=3)
+        val = pd.read_csv(testF, delimiter="\t")
+        
+        process_data(train, test, val, args)

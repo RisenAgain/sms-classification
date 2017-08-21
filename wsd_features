@@ -1,0 +1,26 @@
+Word	stem_word	Synset
+ambulance	ambul	ambulance.n.01
+blast	blast	blast.n.04,blast.v.03
+blaze	blaze	blaze.n.01
+bleed	bleed	shed_blood.v.02
+blood	blood	blood.n.01
+burn	burn	burn.n.05,burn.v.01,burn.v.15
+burning	burn	burn.n.05,burn.v.01,burn.v.15
+burns	burn	burn.n.05,burn.v.01,burn.v.15
+critical	critic	critical.a.06
+destroy	destroy	destroy.v.01
+disease	diseas	disease.n.01
+evacuate	evacu	evacuate.v.01
+evacuation	evacu	emptying.n.01
+explode	explod 	detonate.v.02,explode.v.01
+fire	fire	fire.n.01, fire.n.03, fire.n.09, fire.v.02, open_fire.v.01, burn.v.01
+flame	flame	fire.n.03, fire.v.02, open_fire.v.01, burn.v.01
+headache	headach	headache.n.02
+hospital	hospit	hospital.n.02
+ignite 	ignit	ignite.v.01,erupt.v.03
+ignition	ignit	ignition.n.01
+injure	injur	injure.v.01
+injure	injur	shed_blood.v.02
+medicine	medicin	medicine.n.01,medicine.n.02,medicate.v.02
+pain	pain	pain.n.01,rouble.v.05
+smoke	smoke	smoke.n.02, smoke.n.03

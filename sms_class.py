@@ -124,12 +124,14 @@ def plot_feat(feats, labels, encoder, y, title):
     # Plot
     plt.figure()
     plt.title(title)
+    cmap = plt.get_cmap('viridis')
     index = np.arange(len(encoder.classes_))
     colors = ['r', 'b', 'g', 'y', 'c', 'm', '#c21211', '#000000', '#00aa11',
               '#22cc22', '#bfe23e']
+    colors = cmap(np.linspace(0, 1, len(labels)))
     #labels = np.append(labels,'total')
     for idx1, id1 in enumerate(labels):
-        plt.bar(index+0.05*idx1, values[idx1], width=0.05, color=colors[idx1],
+        plt.bar(index+0.05*idx1, values[idx1], width=0.02,color=colors[idx1],
                 align='center', label=id1)
     x_axis = np.lib.pad(index, (1,1), 'constant',\
                         constant_values=(-0.4,len(index)-1+0.4))
@@ -307,7 +309,9 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         header_train = f_tr_labels.tolist()
         header_train.append(labels.classes_)
         sk_to_weka(vectors_train[1], ytr, header_train,\
-                   '_'.join(labels.classes_)+'_features.arff')
+                   '_'.join(labels.classes_)+'_train_features.arff')
+        sk_to_weka(vectors_val[1], ytr, header_train,\
+                   '_'.join(labels.classes_)+'_test_features.arff')
     
     cls = classifier
     if args.clf >= 4:
@@ -393,6 +397,6 @@ if __name__ == "__main__":
         train = pd.read_csv(trainF, header=0, delimiter="\t")
         test = pd.read_csv(tuneF, header=0, \
                            delimiter="\t", quoting=3)
-        val = pd.read_csv(testF, delimiter="\t")
+        val = pd.read_csv(testF,header=0, delimiter="\t")
         
         process_data(train, test, val, args)

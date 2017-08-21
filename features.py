@@ -3,9 +3,11 @@ from sklearn.preprocessing import RobustScaler, StandardScaler
 from nltk.parse.stanford import StanfordParser
 from nltk import tree
 import pandas as pd
+import logging
 import numpy as np
 import pdb
 import re
+from nltk.wsd import lesk
 from re import finditer
 import os
 import editdistance
@@ -24,6 +26,24 @@ temporal = set(['tonight', 'today', 'tomorrow', 'min', 'month', 'day',
 #st_parser = StanfordParser('libs/stanford-parser-full-2016-10-31/stanford-parser.jar',
 #                        'libs/stanford-parser-full-2016-10-31/stanford-parser-3.7.0-models.jar')
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def get_words(filename):
+    words = []
+    try:
+        with open(filename, 'r') as fn:
+            words = fn.read().split('\n')
+    except EnvironmentError as e:
+        logger.warn("Failed to read file {}".format(filename))
+    return filter(None, words)
+
+
+fire_regex = '|'.join(get_words('fire.words'))
+health_regex = '|'.join(get_words('health.words'))
+personal_regex = '|'.join(get_words('personal.words'))
+wsdf = pd.read_csv('wsd_features', header=0, delimiter='\t')
+wsd_words = wsdf['Word'].tolist()
 
 def chunk_helper(chunk):
     chunks = []
@@ -46,7 +66,6 @@ def do_chunk(x):
     splitted = x.split('[.,\&]')
     for split in splitted:
         chunks, tags = chunk_helper(split)
-        pdb.set_trace()
         for tag in tags:
             if tag == 'NP':
                 break
@@ -89,33 +108,46 @@ def lev_match(ref_list, msg_words):
 
 
 def personal(x):
-    regex = 'my|ours|us|we|i|me'
+    regex = personal_regex
     if re.search(regex, x):
         return 1
     return 0
 
 
 def fire(x):
-    regex = 'fire|smoke|flame|burn|caught|evacu|explo|blaze|kill|injure|destroy|ignite '
+    regex = fire_regex
     foundMatch = 0
+    matchw = None
     for match in finditer(regex, x):
         foundMatch = 1
+        matchw = match.group(0)
         left = max(match.span()[0] - HALF_WINDOW, 0)
         right = min(match.span()[1]+HALF_WINDOW, len(x))
         if 'not' in x[left:right] or 'don\'t' in x[left:right]:
+            return 0
+    if foundMatch and matchw in wsd_words:
+        if validate_wsd(matchw, x):
+            return 1
+        else:
             return 0
     return foundMatch
 
 
 def health(x):
-    regex =\
-    'hospit|ambul|medic|disease|headache|doctor|bleed|blood|pain|heart|critical|injure'
+    regex = health_regex
     foundMatch = 0
+    matchw = None
     for match in finditer(regex, x):
         foundMatch = 1
+        matchw = match.group(0)
         left = max(match.span()[0] - HALF_WINDOW, 0)
         right = min(match.span()[1]+HALF_WINDOW, len(x))
         if 'not' in x[left:right] or 'don\'t' in x[left:right]:
+            return 0
+    if foundMatch and matchw in wsd_words:
+        if validate_wsd(matchw, x):
+            return 1
+        else:
             return 0
     return foundMatch
 
@@ -169,7 +201,7 @@ def msg_len_word(x):
 
 
 def puncts(x):
-    z = re.findall('[:,\.\/-]|\+', x)
+    z = re.findall('[:,\.\/#=\?:0-9\~<>!\-]|\+', x)
     if z:
         return len(z)
     return 0
@@ -236,6 +268,33 @@ def match_regex(regex, x):
     return foundMatch
 
 
+def validate_wsd(word, sent):
+    sense = lesk(sent.split(), word).name()
+    sets = wsdf[wsdf['Word']==word]['Synset'].values[0] 
+    return sense in sets.split(',')
+
+
+def pos_feat(names, feature_set, dataf):
+    pos_file = open(dataf+'_pos', 'r')
+    sents = [l.strip() for l in pos_file]
+    verbs = ['VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ']
+    verb_feats = np.empty((0,6))
+    for s in sents:
+        tokens = s.split()
+        tag_list = []
+        for t in tokens:
+            try:
+                tag = t.split('_')[1]
+                tag_list.append(tag)
+            except:
+                pass
+        feat = [tag_list.count(verb) for verb in verbs]
+        verb_feats = np.append(verb_feats, [feat], axis=0)
+    names = np.append(names, verbs)
+    feature_set = np.hstack((feature_set, verb_feats))
+    return names, feature_set
+
+
 def gen_feat_arr(X, feature_names):
     feature_set = np.empty((0,len(feature_names)))
     for x in X:
@@ -270,6 +329,7 @@ def gen_msg_features(X, dataf = '' , procs = 1):
     #pool = mp.Pool(processes = procs)
     #feature_set = pool.map(gen_feat_arr, X)
     feature_set = gen_feat_arr(X, feature_names)
+    #names, feature_set = pos_feat(names, feature_set, dataf)
     # handle Chunking
     #names = np.append(names, 'chunk_NP')
     #names = np.append(names, 'chunk_VP')

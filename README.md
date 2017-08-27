@@ -20,6 +20,14 @@ Install requirements using:
 pip install -r requirements.txt
 ```
 
+NLTK libraries:
+
+```
+python -m nltk.downloader 'averaged_perceptron_tagger'
+python -m nltk.downloader 'wordnet'
+python -m nltk.downloader 'punkt'
+```
+
 ## Usage
 
 Use 

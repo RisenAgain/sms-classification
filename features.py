@@ -314,11 +314,8 @@ def pos_feat(names, feature_set, dataf):
 def gen_feat_arr(X, feature_names):
     feature_set = np.empty((0,len(feature_names)))
     for x in X:
-        try:
-            features = np.array(list(map(lambda f: f(x), feature_names)))
-            feature_set = np.append(feature_set,[features], axis=0)
-        except:
-            pdb.set_trace()
+        features = np.array(list(map(lambda f: f(x), feature_names)))
+        feature_set = np.append(feature_set,[features], axis=0)
     return feature_set
 
 

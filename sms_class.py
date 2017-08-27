@@ -229,6 +229,15 @@ def generate_features(transformer, X, type=''):
     X_mat = transformer.transform(X)
     X_mat = sp.sparse.hstack((X_mat, vectors[1]), format='csr')
     return [X_mat, vectors[0]]
+    #return [vectors[1], vectors[0]]
+
+
+def cross_validate(model, X, y, args):
+    logger.info("Performing {} fold cross validation".format(args.cv))
+    kf = KFold(n_splits=args.cv, shuffle=True)
+    for train, test in kf.split(X):
+        model.fit(X[train], y[train])
+        print(model.score(X[test], y[test]))
 
 
 def load_and_test(X_test, y_test, args):
@@ -318,7 +327,8 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         X_tr_mat = X_tr_mat.toarray()
         X_te_mat = X_te_mat.toarray()
         X_val_mat = X_val_mat.toarray()
-    
+    if args.cv != 0:
+        cross_validate(cls, X_tr_mat, ytr, args)
     cls.fit(X_tr_mat, ytr)
     
     y_pred = (cls.predict(X_val_mat))
@@ -381,6 +391,8 @@ if __name__ == "__main__":
                         help="Whether to generate preds from stored model")
     parser.add_argument('--roc', action='store_true',
                         help="Whether to generate preds from stored model")
+    parser.add_argument('--cv', type=int, default=5,
+                        help="cross validation, default 0")
 
     parser.parse_args()
     args = parser.parse_args()

@@ -277,8 +277,9 @@ def validate_wsd(word, sent):
 def pos_feat(names, feature_set, dataf):
     pos_file = open(dataf+'_pos', 'r')
     sents = [l.strip() for l in pos_file]
-    verbs = ['VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ']
-    verb_feats = np.empty((0,6))
+    present_verbs = ['VB', 'VBG', 'VBP', 'VBZ']
+    past_verbs = ['VBD', 'VBN']
+    verb_feats = np.empty((0,2))
     for s in sents:
         tokens = s.split()
         tag_list = []
@@ -288,10 +289,25 @@ def pos_feat(names, feature_set, dataf):
                 tag_list.append(tag)
             except:
                 pass
-        feat = [tag_list.count(verb) for verb in verbs]
-        verb_feats = np.append(verb_feats, [feat], axis=0)
-    names = np.append(names, verbs)
-    feature_set = np.hstack((feature_set, verb_feats))
+        feats = []
+        for pv in present_verbs:
+            if pv in tag_list and len(feats) == 0:
+                feats.append(1)
+        if len(feats) == 0:
+            feats.append(0)
+
+        for pv in past_verbs:
+            if pv in tag_list and len(feats) == 1:
+                feats.append(1)
+        if len(feats) == 1:
+            feats.append(0)
+        
+        verb_feats = np.append(verb_feats, [feats], axis=0)
+    names = np.append(names, ['present', 'past'])
+    try:
+        feature_set = np.hstack((feature_set, verb_feats))
+    except:
+        pdb.set_trace()
     return names, feature_set
 
 
@@ -329,7 +345,7 @@ def gen_msg_features(X, dataf = '' , procs = 1):
     #pool = mp.Pool(processes = procs)
     #feature_set = pool.map(gen_feat_arr, X)
     feature_set = gen_feat_arr(X, feature_names)
-    #names, feature_set = pos_feat(names, feature_set, dataf)
+    names, feature_set = pos_feat(names, feature_set, dataf)
     # handle Chunking
     #names = np.append(names, 'chunk_NP')
     #names = np.append(names, 'chunk_VP')

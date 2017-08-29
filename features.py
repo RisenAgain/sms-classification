@@ -339,10 +339,10 @@ def gen_msg_features(X, dataf = '' , procs = 1):
     feature_names += top_level
 
     names = np.array(list(map(lambda a: a.__qualname__, feature_names)))
-    #pool = mp.Pool(processes = procs)
-    #feature_set = pool.map(gen_feat_arr, X)
+    
     feature_set = gen_feat_arr(X, feature_names)
-    names, feature_set = pos_feat(names, feature_set, dataf)
+    #names, feature_set = pos_feat(names, feature_set, dataf)
+    
     # handle Chunking
     #names = np.append(names, 'chunk_NP')
     #names = np.append(names, 'chunk_VP')

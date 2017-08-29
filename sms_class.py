@@ -1,6 +1,6 @@
 import pandas as pd
 import pdb, sys, traceback
-import re
+import re, csv
 import numpy as np
 import scipy as sp
 import logging
@@ -245,7 +245,7 @@ def load_and_test(X_test, y_test, args):
 
     model = pickle.load(open(args.model, 'rb'))
 
-    X_test = pd.read_csv(args.test, delimiter="\t")
+    X_test = readDocuments(args.test, encoding = None, skip_header = True)
 
     X_test_mat, f_test_labels = generate_features(model['vect'], X_test["Message"])
     y_preds = model['cls'].predict(X_test_mat)
@@ -362,6 +362,24 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         roc_auc(X_val_mat, y_val, cls)
 
 
+def readDocuments(filename, text_col=0, tag_col=1, skip_header=False, encoding='utf-8'):
+    documents = []
+    labels = []
+
+    with open(filename, 'r', newline='', encoding=encoding) as data_file:
+        csvfile = csv.reader(data_file, delimiter="\t")
+
+        for line in csvfile:
+            if skip_header==True:
+                skip_header=False
+                continue
+            documents.append(line[text_col].strip())
+            labels.append(line[tag_col].strip().lower())
+
+    data = {'Message': documents, 'Category': labels}
+    return pd.DataFrame(data)
+
+
 if __name__ == "__main__":    
     parser = argparse.ArgumentParser(description='Classify SMS messages')
 
@@ -398,7 +416,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
      
     if args.predict:
-        X_test = pd.read_csv(args.test, header=0, delimiter='\t')
+        X_test = readDocuments(args.test, encoding = None, skip_header = True)
         y_test = X_test['Category']
         y_preds = load_and_test(X_test, y_test, args)
     else:
@@ -406,9 +424,8 @@ if __name__ == "__main__":
         tuneF = args.data + "tune.tsv"    
         testF = args.data + "test.tsv"
         
-        train = pd.read_csv(trainF, header=0, delimiter="\t")
-        test = pd.read_csv(tuneF, header=0, \
-                           delimiter="\t", quoting=3)
-        val = pd.read_csv(testF,header=0, delimiter="\t")
+        train = readDocuments(trainF, encoding = None, skip_header=True)
+        test = readDocuments(tuneF, encoding = None, skip_header=True)
+        val = readDocuments(testF, encoding = None, skip_header=True)
         
         process_data(train, test, val, args)

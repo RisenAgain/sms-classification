@@ -39,9 +39,11 @@ sub_cat_map = {11: 'E_Fire', 12: 'E_Health', 13: 'E_Personal', 14: 'E_Police',\
                 21: 'TD_Event', 22: 'TD_Non_Event', 23: 'TD_Urgent_Callback',
                24: 'TD_Urgent_NonCallBack', 31: 'G_General'}
 clf_map = {
-            1: LogisticRegression(penalty='l2', C=10),
-            2: RandomForestClassifier(n_estimators = 100, max_features='sqrt'),
-            3: svm.LinearSVC()
+    1: [LogisticRegression(penalty='l2', C=10), {'C':[1,10,100], 'penalty':
+                                                 ['l1', 'l2']}],
+            2: [RandomForestClassifier(n_estimators = 100, max_features='sqrt'),{}],
+            3: [svm.LinearSVC(), {}],
+            4: [GradientBoostingClassifier(), {}]
         }
 clf_map[5] = VotingClassifier(estimators=[('0', clf_map[1]), ('1', clf_map[2]),\
                                          ('2', clf_map[3])])
@@ -105,7 +107,7 @@ def process_data(train, test, val, args):
     y_val = val[filter_col]
         
     build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val , args,
-        clf_map[args.clf], None)
+        clf_map[args.clf][0], clf_map[args.clf][1])
 
 
 def plot_feat(feats, labels, encoder, y, title):
@@ -289,7 +291,7 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
             model.fit(X_train, y_train)
             print(model.score(X_test, y_test))
         return model
-    
+     
     labels, y_train, y_test, y_val = generate_labels(y_train, y_test, y_val)
     #labels = LabelEncoder()
     #try:
@@ -319,10 +321,21 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         header_train.append(labels.classes_)
         sk_to_weka(vectors_train[1], ytr, header_train,\
                    '_'.join(labels.classes_)+'_train_features.arff')
-        sk_to_weka(vectors_val[1], ytr, header_train,\
+        sk_to_weka(vectors_test[1], y_test, header_train,\
+                   '_'.join(labels.classes_)+'_tune_features.arff')
+        sk_to_weka(vectors_val[1], y_val, header_train,\
                    '_'.join(labels.classes_)+'_test_features.arff')
     
     cls = classifier
+    
+    if args.gridsearch:
+        logger.info("Performing GridSearch on train data")
+        clf = GridSearchCV(estimator=cls, param_grid=parameters)
+        clf.fit(X_tr_mat, ytr)
+        best_parameters = grid_search.best_estimator_.get_params()
+        for param_name in sorted(parameters.keys()):
+            print("\t%s: %r" % (param_name, best_parameters[param_name]))
+    
     if args.clf >= 4:
         X_tr_mat = X_tr_mat.toarray()
         X_te_mat = X_te_mat.toarray()
@@ -407,9 +420,11 @@ if __name__ == "__main__":
                         help="test filename, use with --predict")
     parser.add_argument('--predict', action='store_true',
                         help="Whether to generate preds from stored model")
+    parser.add_argument('--gridsearch', action='store_true',
+                        help="GridSearch on classifier parameters")
     parser.add_argument('--roc', action='store_true',
                         help="Whether to generate preds from stored model")
-    parser.add_argument('--cv', type=int, default=5,
+    parser.add_argument('--cv', type=int, default=0,
                         help="cross validation, default 0")
 
     parser.parse_args()

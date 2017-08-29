@@ -48,3 +48,22 @@ Following feature files must be present in the sms_class.py directory for full s
 * health.words - health related emergency words, one per line
 * personal.words - personal related words, one per line
 * wsd_features - allowable wsd synsets, <Word><TAB><stem_word><TAB><Synset>
+## Saving features
+
+Use
+```
+python sms_class.py --data path_to_data_folder/ --to_weka 
+```
+to save the train, tune, test files in weka format
+
+## Saving and predicting from model
+
+Save model as:
+```
+python sms_class.py --data path_to_data_foler/ --save
+```
+The above will generate a '.model' file
+Predict from the above model file using:
+```
+python sms_class.py --data path_to_data_folder/ --model <model_file> --predict
+```

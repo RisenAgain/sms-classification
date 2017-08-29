@@ -303,9 +303,6 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     #    pdb.post_mortem(tb)
     
     Xtr, Xte, ytr, yte = X_train, X_test, y_train, y_test
-    vectors_train = np.array(gen_msg_features(Xtr["Message"],args.data+'train'))
-    vectors_test = np.array(gen_msg_features(Xte["Message"], args.data+'tune' ))
-    vectors_val = np.array(gen_msg_features(X_val["Message"], args.data+'test'))
     
     prep = NLTKPreprocessor(stem=True)
     vect = TfidfVectorizer(preprocessor=prep,
@@ -317,6 +314,10 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     X_val_mat, f_val_labels = generate_features(vect, X_val["Message"], args.data+'test')
     # write train to weka for feature analysis
     if args.to_weka:
+        vectors_train = np.array(gen_msg_features(Xtr["Message"],args.data+'train'))
+        vectors_test = np.array(gen_msg_features(Xte["Message"], args.data+'tune' ))
+        vectors_val = np.array(gen_msg_features(X_val["Message"], args.data+'test'))
+        
         header_train = f_tr_labels.tolist()
         header_train.append(labels.classes_)
         sk_to_weka(vectors_train[1], ytr, header_train,\

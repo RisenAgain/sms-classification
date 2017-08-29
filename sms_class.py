@@ -332,7 +332,7 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         logger.info("Performing GridSearch on train data")
         clf = GridSearchCV(estimator=cls, param_grid=parameters)
         clf.fit(X_tr_mat, ytr)
-        best_parameters = grid_search.best_estimator_.get_params()
+        best_parameters = clf.best_estimator_.get_params()
         for param_name in sorted(parameters.keys()):
             print("\t%s: %r" % (param_name, best_parameters[param_name]))
     

@@ -122,8 +122,8 @@ def fire(x):
         foundMatch = 1
         matchw = match.group(0)
         left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or 'don\'t' in x[left:right]:
+        # right = min(match.span()[1]+HALF_WINDOW, len(x))
+        if 'not' in x[left:match.span()[0]] or 'don\'t' in x[left:match.span()[0]]:
             return 0
     if foundMatch and matchw in wsd_words:
         if validate_wsd(matchw, x):
@@ -141,8 +141,8 @@ def health(x):
         foundMatch = 1
         matchw = match.group(0)
         left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or 'don\'t' in x[left:right]:
+        # right = min(match.span()[1]+HALF_WINDOW, len(x))
+        if 'not' in x[left:match.span()[0]] or 'don\'t' in x[left:match.span()[0]]:
             return 0
     if foundMatch and matchw in wsd_words:
         if validate_wsd(matchw, x):
@@ -166,8 +166,8 @@ def request_immedi(x):
     for match in finditer(regex, x):
         foundMatch = 1
         left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or 'don\'t' in x[left:right]:
+        # right = min(match.span()[1]+HALF_WINDOW, len(x))
+        if 'not' in x[left:match.span()[0]] or 'don\'t' in x[left:match.span()[0]]:
             return 0
     return foundMatch
 
@@ -244,8 +244,8 @@ def call(x):
     for match in finditer(regex, x):
         foundMatch = 1
         left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or "don't" in x[left:right]:
+        # right = min(match.span()[1]+HALF_WINDOW, len(x))
+        if 'not' in x[left:match.span()[0]] or "don't" in x[left:match.span()[0]]:
             return 0
     return foundMatch
 
@@ -262,8 +262,8 @@ def match_regex(regex, x):
     for match in finditer(regex, x):
         foundMatch = 1
         left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or "don't" in x[left:right]:
+        # right = min(match.span()[1]+HALF_WINDOW, len(x))
+        if 'not' in x[left:match.span()[0]] or "don't" in x[left:match.span()[0]]:
             return 0
     return foundMatch
 

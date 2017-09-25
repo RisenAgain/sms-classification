@@ -118,6 +118,9 @@ def fire(x):
     regex = fire_regex
     foundMatch = 0
     matchw = None
+
+    if(dont_imperative(x)):
+        return 0
     for match in finditer(regex, x):
         foundMatch = 1
         matchw = match.group(0)
@@ -137,6 +140,8 @@ def health(x):
     regex = health_regex
     foundMatch = 0
     matchw = None
+    if(dont_imperative(x)):
+        return 0
     for match in finditer(regex, x):
         foundMatch = 1
         matchw = match.group(0)
@@ -163,6 +168,8 @@ def todo(x):
 def request_immedi(x):
     regex = 'pls| please | now | asap | min |immediate'
     foundMatch = 0
+    if(dont_imperative(x)):
+        return 0
     for match in finditer(regex, x):
         foundMatch = 1
         left = max(match.span()[0] - HALF_WINDOW, 0)
@@ -180,6 +187,8 @@ def modal_verbs(x):
 
 
 def meet_suggest(x):
+    if(dont_imperative(x)):
+        return 0
     regex = 'what |schedule| should |shall| once |may be| be \
                  available |meet| can | let'
     return match_regex(regex, x)
@@ -238,6 +247,8 @@ def question(x):
 
 def call(x):
     x = x.lower()
+    if(dont_imperative(x)):
+        return 0
     regex = 'call|immediate|bring|asap|reply'
     #z = re.findall(regex,x)
     foundMatch = 0
@@ -267,6 +278,12 @@ def match_regex(regex, x):
             return 0
     return foundMatch
 
+def dont_imperative(x):
+    first_word = x.strip().split()[0].lower()
+    if(first_word == "don't" or first_word == "dont"):
+        return True
+    else:
+        return False
 
 def validate_wsd(word, sent):
     sense = lesk(sent.split(), word).name()

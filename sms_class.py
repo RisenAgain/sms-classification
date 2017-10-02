@@ -195,7 +195,7 @@ def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False)
         if wtf:
             miss_data = df[df[index] == sc]
             miss_data['Classifier Label'] = misc_labels[df[index] == sc]
-            miss_data.to_csv(sc.lower()+'.tsv', sep = '\t')
+            miss_data.to_csv("misclassified/"+sc.lower()+'.tsv', sep = '\t')
 
 
 def feature_selection(model, X_train, y_train, X_test, y_test):
@@ -367,8 +367,8 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         logger.info("Saving model")
         pickle.dump(fitted_model,\
                     open('_'.join(sorted(labels.classes_))+'_'+str(cls)[0:10]+'.model', 'wb'))
-    #misclassifications_class(cls, X_val_mat, y_val, X_val,
-    #                         labels, args.level, True)
+    misclassifications_class(cls, X_val_mat, y_val, X_val,
+                            labels, args.level, True)
     if args.with_graph:
         plot_feat(vectors_val[1], vectors_val[0], labels, y_val,
                     'Average Feature value for each class')

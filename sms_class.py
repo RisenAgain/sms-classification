@@ -393,6 +393,24 @@ def readDocuments(filename, text_col=0, tag_col=1, skip_header=False, encoding='
     data = {'Message': documents, 'Category': labels}
     return pd.DataFrame(data)
 
+def readVal(filename, text_col=0, tag_col=1, additional_col=2, skip_header=False, encoding='utf-8'):
+    documents = []
+    labels = []
+    additional = []
+    with open(filename, 'r', newline='', encoding=encoding) as data_file:
+        csvfile = csv.reader(data_file, delimiter="\t")
+
+        for line in csvfile:
+            if skip_header==True:
+                skip_header=False
+                continue
+            documents.append(line[text_col].strip())
+            labels.append(line[tag_col].strip().lower())
+            additional.append(line[additional_col].strip().lower())
+
+    data = {'Message': documents, 'Category': labels, 'WSD/PT/Neg' : additional}
+    return pd.DataFrame(data)
+
 
 if __name__ == "__main__":    
     parser = argparse.ArgumentParser(description='Classify SMS messages')
@@ -442,6 +460,6 @@ if __name__ == "__main__":
         
         train = readDocuments(trainF, encoding = None, skip_header=True)
         test = readDocuments(tuneF, encoding = None, skip_header=True)
-        val = readDocuments(testF, encoding = None, skip_header=True)
+        val = readVal(testF, encoding = None, skip_header=True)
         
         process_data(train, test, val, args)

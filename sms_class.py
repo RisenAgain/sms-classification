@@ -23,7 +23,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.preprocessing import label_binarize
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_curve, auc
-from features import gen_msg_features
+from features import gen_msg_features, dont_imperative, keywords_general
 from lib import NLTKPreprocessor, analysis, feature_importances
 from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from sklearn import svm
@@ -258,6 +258,25 @@ def load_and_test(X_test, y_test, args):
     return y_preds
 
 
+def check_msg(x):
+	return (dont_imperative(x) or keywords_general(x))
+
+def postProcess(y_pred,test_msgs,label_enc):
+    test_msgs = list(map(lambda a:a.lower().strip('., '), test_msgs))
+    test_msgs = list(map(lambda a:re.sub('[\.]', ' . ',a), test_msgs))
+    test_msgs = list(map(lambda a:re.sub('[,]', ' , ',a), test_msgs))
+    y_labels = label_enc.inverse_transform(y_pred)
+	
+    modified_y = []
+    for y, x in zip(y_labels,test_msgs):
+        if((y in ['emergency','urgent']) and check_msg(x)):
+            modified_y.append('general')
+        else:
+            modified_y.append(y)
+
+    return label_enc.transform(modified_y)
+
+
 def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     args, classifier=svm.LinearSVC(), parameters = None):
 
@@ -346,6 +365,9 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     cls.fit(X_tr_mat, ytr)
     
     y_pred = (cls.predict(X_val_mat))
+
+    y_pred = postProcess(y_pred,X_val["Message"],labels)
+
     print(confusion_matrix(y_val, y_pred))
     conf_f_name = '_'.join(labels.classes_) + '_cfm.tsv'
     

@@ -179,8 +179,8 @@ def generate_labels(y_train, y_test, y_val):
     return labels, y_train, y_test, y_val
 
 
-def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False):
-    y_preds = model.predict(Xte)
+def misclassifications_class(model, y_preds, Xte, yte, msgs, label_enc, level, wtf=False):
+    # y_preds = model.predict(Xte)
     misc = np.where(y_preds != yte)
     # select all misclassified 
     df = msgs.iloc[misc]
@@ -193,7 +193,7 @@ def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False)
         miss = df[df[index] == sc].shape[0]
         print("%s Miss: %s/%s(%04.2f)%%"%(sc, miss, total, (miss/max(total,1))*100))
         if wtf:
-            miss_data = df[df[index] == sc]
+            miss_data = df[df[index] == sc].copy()
             miss_data['Classifier Label'] = misc_labels[df[index] == sc]
             miss_data.to_csv("misclassified/"+sc.lower()+'.tsv', sep = '\t')
 
@@ -389,7 +389,7 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         logger.info("Saving model")
         pickle.dump(fitted_model,\
                     open('_'.join(sorted(labels.classes_))+'_'+str(cls)[0:10]+'.model', 'wb'))
-    misclassifications_class(cls, X_val_mat, y_val, X_val,
+    misclassifications_class(cls, y_pred, X_val_mat, y_val, X_val,
                             labels, args.level, True)
     if args.with_graph:
         plot_feat(vectors_val[1], vectors_val[0], labels, y_val,

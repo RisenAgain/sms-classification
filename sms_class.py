@@ -482,6 +482,6 @@ if __name__ == "__main__":
         
         train = readDocuments(trainF, encoding = None, skip_header=True)
         test = readDocuments(tuneF, encoding = None, skip_header=True)
-        val = readVal(testF, encoding = None, skip_header=True)
+        val = readDocuments(testF, encoding = None, skip_header=True)
         
         process_data(train, test, val, args)

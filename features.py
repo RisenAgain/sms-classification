@@ -298,6 +298,7 @@ def dont_imperative(x):
 #keywords strongly suggesting a general sentence
 def keywords_general(x):
     keywords = ["never","ever"]
+    x = x.lower().split()
     if any(key in x for key in keywords):
         return True
     else:

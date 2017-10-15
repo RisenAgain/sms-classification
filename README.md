@@ -8,6 +8,8 @@ Set up python3 virtual env using:
 virtualenv -p /usr/bin/python3 <envname>
 ```
 
+example : virtualenv -p /usr/bin/python3 my_env
+
 Use it by:
 
 ```
@@ -41,7 +43,7 @@ For a basic minimal run, do:
 python sms_class.py --data <path_to_data_files/>
 ```
 
-Remeber that the data files need to be train.tsv, tune.tsv, test.tsv
+Remeber that the data files need to be train.tsv, tune.tsv, test.tsv. Also don't forget the ending "/" in the path.
 
 Following feature files must be present in the sms_class.py directory for full support:
 * fire.words - Fire related words, one word per line

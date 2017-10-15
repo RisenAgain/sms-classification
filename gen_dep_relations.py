@@ -29,8 +29,7 @@ def gen_dep_files(read_file,op,dep_parser):
 				empty_list = []
 				rel_list.append(empty_list)
 				tree_list.append(empty_list)
-			if count == 5:
-				break
+				
 	print(op+"_deformed_count = " + str(deformed_count))
 
 	with open(args.data+op+"_dependency_rel.p","wb") as rel:

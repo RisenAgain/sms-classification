@@ -226,8 +226,8 @@ def sk_to_weka(X, y, header, filename = 'weka.arff'):
     f.close()
 
 
-def generate_features(transformer, X, type=''):
-    vectors = np.array(gen_msg_features(X, type))
+def generate_features(transformer, X, dependency_tree, dependency_relations, type=''):
+    vectors = np.array(gen_msg_features(X, dependency_tree, dependency_relations, type))
     X_mat = transformer.transform(X)
     X_mat = sp.sparse.hstack((X_mat, vectors[1]), format='csr')
     return [X_mat, vectors[0]]
@@ -320,6 +320,11 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     #    type, value, tb = sys.exc_info()
     #    traceback.print_exc()
     #    pdb.post_mortem(tb)
+
+    train_dependency_relations = pickle.load(open(args.data + "train_dependency_rel.p","rb"))
+    test_dependency_relations = pickle.load(open(args.data + "test_dependency_rel.p","rb"))
+    train_dependency_tree = pickle.load(open(args.data + "train_dependency_tree.p","rb"))
+    test_dependency_tree = pickle.load(open(args.data + "test_dependency_tree.p","rb"))
     
     Xtr, Xte, ytr, yte = X_train, X_test, y_train, y_test
     
@@ -327,10 +332,13 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     vect = TfidfVectorizer(preprocessor=prep,
                 lowercase=True, stop_words=None, ngram_range=(1,2))
     vect.fit_transform(Xtr["Message"])
+    
 
-    X_tr_mat, f_tr_labels = generate_features(vect, Xtr["Message"], args.data+'train')
-    X_te_mat, f_te_labels = generate_features(vect, Xte["Message"], args.data+'tune')
-    X_val_mat, f_val_labels = generate_features(vect, X_val["Message"], args.data+'test')
+    X_tr_mat, f_tr_labels = generate_features(vect, Xtr["Message"], train_dependency_tree, train_dependency_relations, args.data+'train',)
+    # X_te_mat, f_te_labels = generate_features(vect, Xte["Message"], test_dependency_relations, args.data+'tune')
+    X_val_mat, f_val_labels = generate_features(vect, X_val["Message"], test_dependency_tree, test_dependency_relations, args.data+'test',)
+
+	
     # write train to weka for feature analysis
     if args.to_weka:
         vectors_train = np.array(gen_msg_features(Xtr["Message"],args.data+'train'))

@@ -324,6 +324,42 @@ def keywords_general(x):
     else:
         return False
 
+
+def tense(x,dependency_tree, dependency_relations):
+    # 0 - past, 1 - present, 2 - future, 3 - unkown
+    sent_tense = 3
+    if(len(dependency_relations) == 0 or len(dependency_relations[0]) == 0):
+        return sent_tense
+    found_verb = None
+    present_verbs = ['VB', 'VBG', 'VBP', 'VBZ']
+    past_verbs = ['VBD', 'VBN']
+    future_verbs = ['MD']
+    for relation in dependency_relations[0]:
+        for verb in past_verbs:
+            if(verb in relation[0][1] or verb in relation[2][1]):
+                sent_tense = 0
+        for verb in future_verbs:
+            if(verb in relation[0][1] or verb in relation[2][1]):
+                sent_tense = 2
+        for verb in present_verbs:
+            if(verb in relation[0][1]):
+                sent_tense = 1
+                found_verb = relation[0][0]
+            elif(verb in relation[2][1]):
+                sent_tense = 1
+                found_verb = relation[2][0]
+        if(sent_tense != 3):
+            break
+    if(sent_tense == 1):
+        for relation in dependency_relations[0]:
+            if(relation[0][0] == found_verb and relation[1] == 'aux'):
+                if(relation[2][1] in past_verbs):
+                    sent_tense = 0
+                elif(relation[2][1] in future_verbs):
+                    sent_tense = 2
+    return (sent_tense/3.0)
+
+
 def validate_wsd(word, sent):
     sense = lesk(sent.split(), word).name()
     sets = wsdf[wsdf['Word']==word]['Synset'].values[0] 
@@ -390,7 +426,7 @@ def gen_msg_features(X, dependency_tree, dependency_relations, dataf = '', procs
     X = list(map(lambda a:re.sub('[,]', ' , ',a), X))
     #X = list(map(lambda a:re.sub('\s+', '\s',a), X))
     feature_names = [request_immedi, puncts, msg_len_char, msg_len_word,
-                     call, numeric]
+                     call, numeric,tense]
     top_level = [emer, todo]
     second_level = [date, meet_suggest]
     feature_names += top_level

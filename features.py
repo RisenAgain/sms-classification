@@ -338,9 +338,13 @@ def tense(x,dependency_tree, dependency_relations):
         for verb in past_verbs:
             if(verb in relation[0][1] or verb in relation[2][1]):
                 sent_tense = 0
+        if(sent_tense != 3):
+            break
         for verb in future_verbs:
             if(verb in relation[0][1] or verb in relation[2][1]):
                 sent_tense = 2
+        if(sent_tense != 3):
+            break
         for verb in present_verbs:
             if(verb in relation[0][1]):
                 sent_tense = 1
@@ -352,7 +356,7 @@ def tense(x,dependency_tree, dependency_relations):
             break
     if(sent_tense == 1):
         for relation in dependency_relations[0]:
-            if(relation[0][0] == found_verb and relation[1] == 'aux'):
+            if(relation[0][0] == found_verb):
                 if(relation[2][1] in past_verbs):
                     sent_tense = 0
                 elif(relation[2][1] in future_verbs):

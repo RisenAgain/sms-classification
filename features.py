@@ -309,11 +309,11 @@ def check_relation(parent,children,relations):
     return False
 
 def dont_imperative(x):
-    first_word = x.strip().split()[0].lower()
-    if(first_word == "don't" or first_word == "dont"):
-        return True
-    else:
-        return False
+    if(len(x) != 0):
+        first_word = x.strip().split()[0].lower()
+        if(first_word == "don't" or first_word == "dont"):
+            return True
+    return False
 
 #keywords strongly suggesting a general sentence
 def keywords_general(x):

@@ -361,7 +361,25 @@ def tense(x,dependency_tree, dependency_relations):
                     sent_tense = 0
                 elif(relation[2][1] in future_verbs):
                     sent_tense = 2
-    return (sent_tense/3.0)
+    return (sent_tense)
+
+
+def past(x,dependency_tree, dependency_relations):
+    if(tense(x,dependency_tree, dependency_relations) == 0):
+        return 1
+    return 0
+
+
+def present(x,dependency_tree, dependency_relations):
+    if(tense(x,dependency_tree, dependency_relations) == 1):
+        return 1
+    return 0
+
+
+def future(x,dependency_tree, dependency_relations):
+    if(tense(x,dependency_tree, dependency_relations) == 2):
+        return 1
+    return 0
 
 
 def validate_wsd(word, sent):
@@ -409,7 +427,7 @@ def pos_feat(names, feature_set, dataf):
 
 def gen_feat_arr(X, feature_names, dependency_tree, dependency_relations):
     feature_set = np.empty((0,len(feature_names)))
-    print(len(X),len(dependency_tree),len(dependency_relations))
+    # print(len(X),len(dependency_tree),len(dependency_relations))
     for i in range(len(X)):
         features = np.array(list(map(lambda f: f(X[i],dependency_tree[i],dependency_relations[i]), feature_names)))
         feature_set = np.append(feature_set,[features], axis=0)
@@ -430,7 +448,7 @@ def gen_msg_features(X, dependency_tree, dependency_relations, dataf = '', procs
     X = list(map(lambda a:re.sub('[,]', ' , ',a), X))
     #X = list(map(lambda a:re.sub('\s+', '\s',a), X))
     feature_names = [request_immedi, puncts, msg_len_char, msg_len_word,
-                     call, numeric,tense]
+                     call, numeric,past,present,future]
     top_level = [emer, todo]
     second_level = [date, meet_suggest]
     feature_names += top_level

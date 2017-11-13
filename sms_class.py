@@ -1,10 +1,11 @@
 import pandas as pd
 import pdb, sys, traceback
-import re, csv
+import re, csv, random
 import numpy as np
 import scipy as sp
 import logging
 import pickle
+from collections import defaultdict
 from nltk.stem.porter import *
 from sklearn import svm
 from sklearn.pipeline import Pipeline, make_pipeline
@@ -27,6 +28,7 @@ from features import gen_msg_features, dont_imperative, keywords_general
 from lib import NLTKPreprocessor, analysis, feature_importances
 from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from sklearn import svm
+from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import argparse
@@ -277,6 +279,92 @@ def postProcess(y_pred,test_msgs,label_enc):
     return label_enc.transform(modified_y)
 
 
+def undersample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels):
+    min_samples = min([len(Xtr[Xtr['Category'] == label]) for label in labels.classes_])
+
+    all_drop_indices = []
+    for label in labels.classes_:
+    	size = len(Xtr[Xtr['Category'] == label])
+    	drop_size = size - min_samples
+    	drop_indices = random.sample(list(Xtr[Xtr['Category'] == label].index),drop_size)
+    	Xtr = Xtr.drop(drop_indices)
+    	all_drop_indices.extend(drop_indices)
+
+    ytr = np.delete(ytr,all_drop_indices)
+    train_dependency_relations = [value for index,value in enumerate(train_dependency_relations) if index not in all_drop_indices]
+    train_dependency_tree = [value for index,value in enumerate(train_dependency_tree) if index not in all_drop_indices]
+    return Xtr,ytr,train_dependency_relations,train_dependency_tree
+
+
+def oversample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels):
+    max_samples = max([len(Xtr[Xtr['Category'] == label]) for label in labels.classes_])
+    all_add_indices = []
+    for label in labels.classes_:
+    	size = len(Xtr[Xtr['Category'] == label])
+    	add_size = max_samples - size
+    	add_indices = list(Xtr[Xtr['Category'] == label].index)*int(add_size/size)
+    	add_indices.extend(random.sample(list(Xtr[Xtr['Category'] == label].index),add_size%size))
+    	all_add_indices.extend(add_indices)
+
+    for i in all_add_indices:
+    	Xtr = Xtr.append(Xtr.iloc[i],ignore_index=True)
+    	ytr = np.append(ytr,ytr[i])
+    	train_dependency_relations.append(train_dependency_relations[i])
+    	train_dependency_tree.append(train_dependency_tree[i])
+    return Xtr,ytr,train_dependency_relations,train_dependency_tree
+
+
+def under_over_sample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels):
+    class_sizes = [len(Xtr[Xtr['Category'] == label]) for label in labels.classes_]
+    average_samples = int(sum(class_sizes)/len(class_sizes))
+
+    all_drop_indices = []
+    all_add_indices = []
+    for label in labels.classes_:
+    	size = len(Xtr[Xtr['Category'] == label])
+    	if(size > average_samples):
+    		drop_size = size - average_samples
+	    	drop_indices = random.sample(list(Xtr[Xtr['Category'] == label].index),drop_size)
+	    	all_drop_indices.extend(drop_indices)
+    	elif(size < average_samples):
+	    	add_size = average_samples - size
+	    	add_indices = list(Xtr[Xtr['Category'] == label].index)*int(add_size/size)
+	    	add_indices.extend(random.sample(list(Xtr[Xtr['Category'] == label].index),add_size%size))
+	    	all_add_indices.extend(add_indices)
+
+    for i in all_add_indices:
+    	Xtr = Xtr.append(Xtr.iloc[i],ignore_index=True)
+    	ytr = np.append(ytr,ytr[i])
+    	train_dependency_relations.append(train_dependency_relations[i])
+    	train_dependency_tree.append(train_dependency_tree[i])
+
+    Xtr = Xtr.drop(all_drop_indices)
+    ytr = np.delete(ytr,all_drop_indices)
+    train_dependency_relations = [value for index,value in enumerate(train_dependency_relations) if index not in all_drop_indices]
+    train_dependency_tree = [value for index,value in enumerate(train_dependency_tree) if index not in all_drop_indices]
+    return Xtr,ytr,train_dependency_relations,train_dependency_tree
+
+def balance_data(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels, sampling):
+    if(sampling == 0):
+        #undersampling
+        return undersample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels)
+    if(sampling == 1):
+        #oversampling
+        return oversample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels)
+    if(sampling == 2):
+        #undersampling+oversampling
+        return under_over_sample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels)
+
+
+def imbalance_sampling(X, y, mode):
+	if(mode == 0):
+		ros = RandomOverSampler(random_state=0)
+		return ros.fit_sample(X, y)
+	if(mode == 1):
+		return SMOTE().fit_sample(X, y)
+	if(mode == 2):
+		return ADASYN().fit_sample(X, y)
+
 def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     args, classifier=svm.LinearSVC(), parameters = None):
 
@@ -328,6 +416,8 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     
     Xtr, Xte, ytr, yte = X_train, X_test, y_train, y_test
     
+    # Xtr, ytr, train_dependency_relations, train_dependency_tree = balance_data(Xtr, ytr, train_dependency_relations, train_dependency_tree,labels,sampling = 2)
+
     prep = NLTKPreprocessor(stem=True)
     vect = TfidfVectorizer(preprocessor=prep,
                 lowercase=True, stop_words=None, ngram_range=(1,2))
@@ -370,6 +460,8 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         X_val_mat = X_val_mat.toarray()
     if args.cv != 0:
         cross_validate(cls, X_tr_mat, ytr, args)
+
+    # X_tr_mat, ytr = imbalance_sampling(X_tr_mat, ytr,2)
     cls.fit(X_tr_mat, ytr)
     
     y_pred = (cls.predict(X_val_mat))

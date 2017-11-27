@@ -461,12 +461,113 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     if args.cv != 0:
         cross_validate(cls, X_tr_mat, ytr, args)
 
+
+    # Three level hierarchy classifiers
+    # Classifying between general and non-general
+    ytr_gen = np.array([1 if labels.inverse_transform(i) == 'general' else 0 for i in ytr])
+    y_val_gen = np.array([1 if labels.inverse_transform(i) == 'general' else 0 for i in y_val])
+    print("Classifying general cases : \n\n")
+    cls.fit(X_tr_mat,ytr_gen)
+    y_pred_gen = (cls.predict(X_val_mat))
+    y_pred_overall = np.array([labels.transform(['general'])[0] if i == 1 else -1 for i in y_pred_gen])
+    print(confusion_matrix(y_val_gen, y_pred_gen))
+    scores = clsr(y_val_gen, y_pred_gen)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+
+    # Classifying between (td_event,td_non_event) and (emergency,urgent)
+    X_tr_mat_non_gen = X_tr_mat[(ytr != labels.transform(['general'])[0]).nonzero()[0],:]
+    ytr_non_gen = ytr[ytr != labels.transform(['general'])[0]]
+    ytr_non_gen = np.array([1 if (labels.inverse_transform(i) == 'td_event' or labels.inverse_transform(i) == 'td_non_event') else 0 for i in ytr_non_gen])
+    
+    X_val_mat_non_gen = X_val_mat[(y_pred_gen != 1).nonzero()[0],:]
+    y_val_non_gen = y_val[y_pred_gen != 1]
+    y_val_non_gen = np.array([1 if (labels.inverse_transform(i) == 'td_event' or labels.inverse_transform(i) == 'td_non_event') else 0 for i in y_val_non_gen])
+    print("Classifying non-general cases : \n\n")
+    cls.fit(X_tr_mat_non_gen,ytr_non_gen)
+    y_pred_non_gen = (cls.predict(X_val_mat_non_gen))
+    print(confusion_matrix(y_val_non_gen, y_pred_non_gen))
+    scores = clsr(y_val_non_gen, y_pred_non_gen)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+
+    # Classifying between td_event and td_non_event
+    X_tr_mat_td = X_tr_mat[np.array([y in labels.transform(['td_event','td_non_event']) for y in ytr]).nonzero()[0]]
+    ytr_td = ytr[[y in labels.transform(['td_event','td_non_event']) for y in ytr]]
+    ytr_td = np.array([1 if labels.inverse_transform(i) == 'td_event' else 0 for i in ytr_td])
+
+    X_val_mat_td = X_val_mat_non_gen[(y_pred_non_gen == 1).nonzero()[0],:]
+    y_val_td = (y_val[y_pred_gen != 1])[y_pred_non_gen == 1]
+    y_val_td = np.array([1 if labels.inverse_transform(i) == 'td_event' else 0 for i in y_val_td])
+    td_pred_indices = (y_pred_gen != 1).nonzero()[0][y_pred_non_gen == 1]
+    print("Classifying td_event and td_non_event : \n\n")
+    cls.fit(X_tr_mat_td,ytr_td)
+    y_pred_td = (cls.predict(X_val_mat_td))
+    y_pred_td_label = np.array([labels.transform(['td_event'])[0] if i == 1 else labels.transform(['td_non_event'])[0] for i in y_pred_td])
+    y_pred_overall[td_pred_indices] = y_pred_td_label
+    print(confusion_matrix(y_val_td,y_pred_td))
+    scores = clsr(y_val_td,y_pred_td)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+
+    # Classifying between emergency and urgent
+    X_tr_mat_emer = X_tr_mat[np.array([y in labels.transform(['emergency','urgent']) for y in ytr]).nonzero()[0]]
+    ytr_emer = ytr[[y in labels.transform(['emergency','urgent']) for y in ytr]]
+    ytr_emer = np.array([1 if labels.inverse_transform(i) == 'emergency' else 0 for i in ytr_emer])
+
+    X_val_mat_emer = X_val_mat_non_gen[(y_pred_non_gen == 0).nonzero()[0],:]
+    y_val_emer = (y_val[y_pred_gen != 1])[y_pred_non_gen == 0]
+    y_val_emer = np.array([1 if labels.inverse_transform(i) == 'emergency' else 0 for i in y_val_emer])
+    emer_pred_indices = (y_pred_gen != 1).nonzero()[0][y_pred_non_gen == 0]
+    print("Classifying emergency and urgent : \n\n")
+    cls.fit(X_tr_mat_emer,ytr_emer)
+    y_pred_emer = (cls.predict(X_val_mat_emer))
+    y_pred_emer_label = np.array([labels.transform(['emergency'])[0] if i == 1 else labels.transform(['urgent'])[0] for i in y_pred_emer])
+    y_pred_overall[emer_pred_indices] = y_pred_emer_label
+    print(confusion_matrix(y_val_emer,y_pred_emer))
+    scores = clsr(y_val_emer,y_pred_emer)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+
+    print("Overall classification scores : ")
+    print(confusion_matrix(y_val,y_pred_overall))
+    scores = clsr(y_val,y_pred_overall)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+    #Three level hierarchy classifiers ends here
+
+
     # X_tr_mat, ytr = imbalance_sampling(X_tr_mat, ytr,2)
     cls.fit(X_tr_mat, ytr)
     
     y_pred = (cls.predict(X_val_mat))
 
-    y_pred = postProcess(y_pred,X_val["Message"],labels)
+    # y_pred = postProcess(y_pred,X_val["Message"],labels)
 
     print(confusion_matrix(y_val, y_pred))
     conf_f_name = '_'.join(labels.classes_) + '_cfm.tsv'

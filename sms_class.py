@@ -29,6 +29,7 @@ from lib import NLTKPreprocessor, analysis, feature_importances
 from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from sklearn import svm
 from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import argparse
@@ -365,6 +366,25 @@ def imbalance_sampling(X, y, mode):
 	if(mode == 2):
 		return ADASYN().fit_sample(X, y)
 
+
+def missclassified(msgs, y_val_actual, y_pred, cat1, cat2):
+    # y_preds = model.predict(Xte)
+    misc = np.where(y_pred != y_val_actual)
+    # select all misclassified
+    df = msgs.iloc[misc]
+    dfy = y_val_actual[misc]
+    misc_labels = np.array(['general' if i == 1 else 'non-general' for i in y_pred])[misc]
+    # misc_labels = label_enc.inverse_transform(y_preds)[misc]
+    index = 'Category'
+    for sc in [1,0]:
+        total = msgs[y_val_actual == sc].shape[0]
+        miss = df[dfy == sc].shape[0]
+        print("%s Miss: %s/%s(%04.2f)%%"%(['non-general','general'][sc], miss, total, (miss/max(total,1))*100))
+        miss_data = df[dfy == sc].copy()
+        miss_data['Classifier Label'] = misc_labels[dfy == sc]
+        miss_data.to_csv("misclassified_hier/"+(['non-general','general'][sc].lower())+'.tsv', sep = '\t')
+
+
 def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     args, classifier=svm.LinearSVC(), parameters = None):
 
@@ -479,6 +499,7 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     scores[-2] = '\t' + scores[-2]
     scores = '\n'.join(scores)
     print(scores)
+    missclassified(X_val["Message"], y_val_gen, y_pred_gen,"general","nonGeneral")
 
 
     # Classifying between (td_event,td_non_event) and (emergency,urgent)
@@ -567,6 +588,9 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
 
 
     # X_tr_mat, ytr = imbalance_sampling(X_tr_mat, ytr,2)
+    # lda = LinearDiscriminantAnalysis()
+    # X_tr_mat = lda.fit_transform(X_tr_mat.toarray(), ytr)
+
     cls.fit(X_tr_mat, ytr)
     
     y_pred = (cls.predict(X_val_mat))

@@ -8,6 +8,8 @@ Set up python3 virtual env using:
 virtualenv -p /usr/bin/python3 <envname>
 ```
 
+example : virtualenv -p /usr/bin/python3 my_env
+
 Use it by:
 
 ```
@@ -30,7 +32,41 @@ python -m nltk.downloader 'punkt'
 
 ## Usage
 
+First you'll have to generate dependency-relation files for your dataset.
+To generate dependency files:
+
+1. Download Stanford dependency parser from here https://nlp.stanford.edu/software/stanford-parser-full-2017-06-09.zip , if you don't have it already. Unzip it.
+
+2. Set $CLASSPATH environment variable to the path to the Stanford dependency parser.
+	export CLASSPATH=path/to/parser/stanford-parser-full-2017-06-09
+
+3. Keep your training and testing files (tab seperated files, tsv) in a folder, say "dataset", with names train.tsv and test.tsv respectively.
+
+	dataset/
+		|	train.tsv
+		|	test.tsv
+
+4. Install these packages in python3 if not already installed:
+	nltk
+	pandas
+	argparse
+	pickle
+	copy
+
+5. Run gen_dep_relation.py with python3.
+		python3 gen_dep_relation.py --data path/to/dataset/
+	Don't forget the ending "/"
+
+6. Dependency files will be stored in the dataset folder itself. Note: It may take long time depending upon the size of dataset.
+
 Use 
+
+
+```
+source <envname>/bin/activate
+```
+
+
 ```
 python sms_class.py -h
 ```
@@ -41,7 +77,7 @@ For a basic minimal run, do:
 python sms_class.py --data <path_to_data_files/>
 ```
 
-Remeber that the data files need to be train.tsv, tune.tsv, test.tsv
+Remeber that the data files need to be train.tsv, tune.tsv, test.tsv. Also don't forget the ending "/" in the path.
 
 Following feature files must be present in the sms_class.py directory for full support:
 * fire.words - Fire related words, one word per line

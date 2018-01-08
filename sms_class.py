@@ -1,10 +1,11 @@
 import pandas as pd
 import pdb, sys, traceback
-import re, csv
+import re, csv, random
 import numpy as np
 import scipy as sp
 import logging
 import pickle
+from collections import defaultdict
 from nltk.stem.porter import *
 from sklearn import svm
 from sklearn.pipeline import Pipeline, make_pipeline
@@ -23,10 +24,12 @@ from sklearn.metrics import confusion_matrix
 from sklearn.preprocessing import label_binarize
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_curve, auc
-from features import gen_msg_features
+from features import gen_msg_features, dont_imperative, keywords_general
 from lib import NLTKPreprocessor, analysis, feature_importances
 from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from sklearn import svm
+from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import argparse
@@ -179,8 +182,8 @@ def generate_labels(y_train, y_test, y_val):
     return labels, y_train, y_test, y_val
 
 
-def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False):
-    y_preds = model.predict(Xte)
+def misclassifications_class(model, y_preds, Xte, yte, msgs, label_enc, level, wtf=False):
+    # y_preds = model.predict(Xte)
     misc = np.where(y_preds != yte)
     # select all misclassified 
     df = msgs.iloc[misc]
@@ -193,9 +196,9 @@ def misclassifications_class(model, Xte, yte, msgs, label_enc, level, wtf=False)
         miss = df[df[index] == sc].shape[0]
         print("%s Miss: %s/%s(%04.2f)%%"%(sc, miss, total, (miss/max(total,1))*100))
         if wtf:
-            miss_data = df[df[index] == sc]
+            miss_data = df[df[index] == sc].copy()
             miss_data['Classifier Label'] = misc_labels[df[index] == sc]
-            miss_data.to_csv(sc.lower()+'.tsv', sep = '\t')
+            miss_data.to_csv("misclassified/"+sc.lower()+'.tsv', sep = '\t')
 
 
 def feature_selection(model, X_train, y_train, X_test, y_test):
@@ -226,8 +229,8 @@ def sk_to_weka(X, y, header, filename = 'weka.arff'):
     f.close()
 
 
-def generate_features(transformer, X, type=''):
-    vectors = np.array(gen_msg_features(X, type))
+def generate_features(transformer, X, dependency_tree, dependency_relations, type=''):
+    vectors = np.array(gen_msg_features(X, dependency_tree, dependency_relations, type))
     X_mat = transformer.transform(X)
     X_mat = sp.sparse.hstack((X_mat, vectors[1]), format='csr')
     return [X_mat, vectors[0]]
@@ -256,6 +259,130 @@ def load_and_test(X_test, y_test, args):
     X_test["Category-Predicted"] = t_lb
     X_test.to_csv(args.test+'.labels', sep='\t')
     return y_preds
+
+
+def check_msg(x):
+	return (dont_imperative(x) or keywords_general(x))
+
+def postProcess(y_pred,test_msgs,label_enc):
+    test_msgs = list(map(lambda a:a.lower().strip('., '), test_msgs))
+    test_msgs = list(map(lambda a:re.sub('[\.]', ' . ',a), test_msgs))
+    test_msgs = list(map(lambda a:re.sub('[,]', ' , ',a), test_msgs))
+    y_labels = label_enc.inverse_transform(y_pred)
+	
+    modified_y = []
+    for y, x in zip(y_labels,test_msgs):
+        if((y in ['emergency','urgent']) and check_msg(x)):
+            modified_y.append('general')
+        else:
+            modified_y.append(y)
+
+    return label_enc.transform(modified_y)
+
+
+def undersample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels):
+    min_samples = min([len(Xtr[Xtr['Category'] == label]) for label in labels.classes_])
+
+    all_drop_indices = []
+    for label in labels.classes_:
+    	size = len(Xtr[Xtr['Category'] == label])
+    	drop_size = size - min_samples
+    	drop_indices = random.sample(list(Xtr[Xtr['Category'] == label].index),drop_size)
+    	Xtr = Xtr.drop(drop_indices)
+    	all_drop_indices.extend(drop_indices)
+
+    ytr = np.delete(ytr,all_drop_indices)
+    train_dependency_relations = [value for index,value in enumerate(train_dependency_relations) if index not in all_drop_indices]
+    train_dependency_tree = [value for index,value in enumerate(train_dependency_tree) if index not in all_drop_indices]
+    return Xtr,ytr,train_dependency_relations,train_dependency_tree
+
+
+def oversample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels):
+    max_samples = max([len(Xtr[Xtr['Category'] == label]) for label in labels.classes_])
+    all_add_indices = []
+    for label in labels.classes_:
+    	size = len(Xtr[Xtr['Category'] == label])
+    	add_size = max_samples - size
+    	add_indices = list(Xtr[Xtr['Category'] == label].index)*int(add_size/size)
+    	add_indices.extend(random.sample(list(Xtr[Xtr['Category'] == label].index),add_size%size))
+    	all_add_indices.extend(add_indices)
+
+    for i in all_add_indices:
+    	Xtr = Xtr.append(Xtr.iloc[i],ignore_index=True)
+    	ytr = np.append(ytr,ytr[i])
+    	train_dependency_relations.append(train_dependency_relations[i])
+    	train_dependency_tree.append(train_dependency_tree[i])
+    return Xtr,ytr,train_dependency_relations,train_dependency_tree
+
+
+def under_over_sample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels):
+    class_sizes = [len(Xtr[Xtr['Category'] == label]) for label in labels.classes_]
+    average_samples = int(sum(class_sizes)/len(class_sizes))
+
+    all_drop_indices = []
+    all_add_indices = []
+    for label in labels.classes_:
+    	size = len(Xtr[Xtr['Category'] == label])
+    	if(size > average_samples):
+    		drop_size = size - average_samples
+	    	drop_indices = random.sample(list(Xtr[Xtr['Category'] == label].index),drop_size)
+	    	all_drop_indices.extend(drop_indices)
+    	elif(size < average_samples):
+	    	add_size = average_samples - size
+	    	add_indices = list(Xtr[Xtr['Category'] == label].index)*int(add_size/size)
+	    	add_indices.extend(random.sample(list(Xtr[Xtr['Category'] == label].index),add_size%size))
+	    	all_add_indices.extend(add_indices)
+
+    for i in all_add_indices:
+    	Xtr = Xtr.append(Xtr.iloc[i],ignore_index=True)
+    	ytr = np.append(ytr,ytr[i])
+    	train_dependency_relations.append(train_dependency_relations[i])
+    	train_dependency_tree.append(train_dependency_tree[i])
+
+    Xtr = Xtr.drop(all_drop_indices)
+    ytr = np.delete(ytr,all_drop_indices)
+    train_dependency_relations = [value for index,value in enumerate(train_dependency_relations) if index not in all_drop_indices]
+    train_dependency_tree = [value for index,value in enumerate(train_dependency_tree) if index not in all_drop_indices]
+    return Xtr,ytr,train_dependency_relations,train_dependency_tree
+
+def balance_data(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels, sampling):
+    if(sampling == 0):
+        #undersampling
+        return undersample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels)
+    if(sampling == 1):
+        #oversampling
+        return oversample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels)
+    if(sampling == 2):
+        #undersampling+oversampling
+        return under_over_sample(Xtr, ytr, train_dependency_relations, train_dependency_tree, labels)
+
+
+def imbalance_sampling(X, y, mode):
+	if(mode == 0):
+		ros = RandomOverSampler(random_state=0)
+		return ros.fit_sample(X, y)
+	if(mode == 1):
+		return SMOTE().fit_sample(X, y)
+	if(mode == 2):
+		return ADASYN().fit_sample(X, y)
+
+
+def missclassified(msgs, y_val_actual, y_pred, cat1, cat2):
+    # y_preds = model.predict(Xte)
+    misc = np.where(y_pred != y_val_actual)
+    # select all misclassified
+    df = msgs.iloc[misc]
+    dfy = y_val_actual[misc]
+    misc_labels = np.array(['general' if i == 1 else 'non-general' for i in y_pred])[misc]
+    # misc_labels = label_enc.inverse_transform(y_preds)[misc]
+    index = 'Category'
+    for sc in [1,0]:
+        total = msgs[y_val_actual == sc].shape[0]
+        miss = df[dfy == sc].shape[0]
+        print("%s Miss: %s/%s(%04.2f)%%"%(['non-general','general'][sc], miss, total, (miss/max(total,1))*100))
+        miss_data = df[dfy == sc].copy()
+        miss_data['Classifier Label'] = misc_labels[dfy == sc]
+        miss_data.to_csv("misclassified_hier/"+(['non-general','general'][sc].lower())+'.tsv', sep = '\t')
 
 
 def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
@@ -301,17 +428,27 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
     #    type, value, tb = sys.exc_info()
     #    traceback.print_exc()
     #    pdb.post_mortem(tb)
+
+    train_dependency_relations = pickle.load(open(args.data + "train_dependency_rel.p","rb"))
+    test_dependency_relations = pickle.load(open(args.data + "test_dependency_rel.p","rb"))
+    train_dependency_tree = pickle.load(open(args.data + "train_dependency_tree.p","rb"))
+    test_dependency_tree = pickle.load(open(args.data + "test_dependency_tree.p","rb"))
     
     Xtr, Xte, ytr, yte = X_train, X_test, y_train, y_test
     
+    # Xtr, ytr, train_dependency_relations, train_dependency_tree = balance_data(Xtr, ytr, train_dependency_relations, train_dependency_tree,labels,sampling = 2)
+
     prep = NLTKPreprocessor(stem=True)
     vect = TfidfVectorizer(preprocessor=prep,
                 lowercase=True, stop_words=None, ngram_range=(1,2))
     vect.fit_transform(Xtr["Message"])
+    
 
-    X_tr_mat, f_tr_labels = generate_features(vect, Xtr["Message"], args.data+'train')
-    X_te_mat, f_te_labels = generate_features(vect, Xte["Message"], args.data+'tune')
-    X_val_mat, f_val_labels = generate_features(vect, X_val["Message"], args.data+'test')
+    X_tr_mat, f_tr_labels = generate_features(vect, Xtr["Message"], train_dependency_tree, train_dependency_relations, args.data+'train',)
+    # X_te_mat, f_te_labels = generate_features(vect, Xte["Message"], test_dependency_relations, args.data+'tune')
+    X_val_mat, f_val_labels = generate_features(vect, X_val["Message"], test_dependency_tree, test_dependency_relations, args.data+'test',)
+
+	
     # write train to weka for feature analysis
     if args.to_weka:
         vectors_train = np.array(gen_msg_features(Xtr["Message"],args.data+'train'))
@@ -343,9 +480,123 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         X_val_mat = X_val_mat.toarray()
     if args.cv != 0:
         cross_validate(cls, X_tr_mat, ytr, args)
+
+
+    # Three level hierarchy classifiers
+    # Classifying between general and non-general
+    ytr_gen = np.array([1 if labels.inverse_transform(i) == 'general' else 0 for i in ytr])
+    y_val_gen = np.array([1 if labels.inverse_transform(i) == 'general' else 0 for i in y_val])
+    print("Classifying general cases : \n\n")
+    X_tr_mat_o,ytr_gen_o = imbalance_sampling(X_tr_mat,ytr_gen,0)
+    cls.fit(X_tr_mat_o,ytr_gen_o)
+    y_pred_gen = (cls.predict(X_val_mat))
+    y_pred_overall = np.array([labels.transform(['general'])[0] if i == 1 else -1 for i in y_pred_gen])
+    print(confusion_matrix(y_val_gen, y_pred_gen))
+    scores = clsr(y_val_gen, y_pred_gen)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+    missclassified(X_val["Message"], y_val_gen, y_pred_gen,"general","nonGeneral")
+
+
+    # Classifying between (td_event,td_non_event) and (emergency,urgent)
+    X_tr_mat_non_gen = X_tr_mat[(ytr != labels.transform(['general'])[0]).nonzero()[0],:]
+    ytr_non_gen = ytr[ytr != labels.transform(['general'])[0]]
+    ytr_non_gen = np.array([1 if (labels.inverse_transform(i) == 'td_event' or labels.inverse_transform(i) == 'td_non_event') else 0 for i in ytr_non_gen])
+    
+    X_val_mat_non_gen = X_val_mat[(y_pred_gen != 1).nonzero()[0],:]
+    y_val_non_gen = y_val[y_pred_gen != 1]
+    y_val_non_gen = np.array([1 if (labels.inverse_transform(i) == 'td_event' or labels.inverse_transform(i) == 'td_non_event') else 0 for i in y_val_non_gen])
+    print("Classifying non-general cases : \n\n")
+    X_tr_mat_non_gen_o,ytr_non_gen_o = imbalance_sampling(X_tr_mat_non_gen,ytr_non_gen,0)
+    cls.fit(X_tr_mat_non_gen_o,ytr_non_gen_o)
+    y_pred_non_gen = (cls.predict(X_val_mat_non_gen))
+    print(confusion_matrix(y_val_non_gen, y_pred_non_gen))
+    scores = clsr(y_val_non_gen, y_pred_non_gen)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+
+    # Classifying between td_event and td_non_event
+    X_tr_mat_td = X_tr_mat[np.array([y in labels.transform(['td_event','td_non_event']) for y in ytr]).nonzero()[0]]
+    ytr_td = ytr[[y in labels.transform(['td_event','td_non_event']) for y in ytr]]
+    ytr_td = np.array([1 if labels.inverse_transform(i) == 'td_event' else 0 for i in ytr_td])
+
+    X_val_mat_td = X_val_mat_non_gen[(y_pred_non_gen == 1).nonzero()[0],:]
+    y_val_td = (y_val[y_pred_gen != 1])[y_pred_non_gen == 1]
+    y_val_td = np.array([1 if labels.inverse_transform(i) == 'td_event' else 0 for i in y_val_td])
+    td_pred_indices = (y_pred_gen != 1).nonzero()[0][y_pred_non_gen == 1]
+    print("Classifying td_event and td_non_event : \n\n")
+    X_tr_mat_td_o,ytr_td_o = imbalance_sampling(X_tr_mat_td,ytr_td,0)
+    cls.fit(X_tr_mat_td_o,ytr_td_o)
+    y_pred_td = (cls.predict(X_val_mat_td))
+    y_pred_td_label = np.array([labels.transform(['td_event'])[0] if i == 1 else labels.transform(['td_non_event'])[0] for i in y_pred_td])
+    y_pred_overall[td_pred_indices] = y_pred_td_label
+    print(confusion_matrix(y_val_td,y_pred_td))
+    scores = clsr(y_val_td,y_pred_td)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+
+    # Classifying between emergency and urgent
+    X_tr_mat_emer = X_tr_mat[np.array([y in labels.transform(['emergency','urgent']) for y in ytr]).nonzero()[0]]
+    ytr_emer = ytr[[y in labels.transform(['emergency','urgent']) for y in ytr]]
+    ytr_emer = np.array([1 if labels.inverse_transform(i) == 'emergency' else 0 for i in ytr_emer])
+
+    X_val_mat_emer = X_val_mat_non_gen[(y_pred_non_gen == 0).nonzero()[0],:]
+    y_val_emer = (y_val[y_pred_gen != 1])[y_pred_non_gen == 0]
+    y_val_emer = np.array([1 if labels.inverse_transform(i) == 'emergency' else 0 for i in y_val_emer])
+    emer_pred_indices = (y_pred_gen != 1).nonzero()[0][y_pred_non_gen == 0]
+    print("Classifying emergency and urgent : \n\n")
+    X_tr_mat_emer_o,ytr_emer_o = imbalance_sampling(X_tr_mat_emer,ytr_emer,0)
+    cls.fit(X_tr_mat_emer_o,ytr_emer_o)
+    y_pred_emer = (cls.predict(X_val_mat_emer))
+    y_pred_emer_label = np.array([labels.transform(['emergency'])[0] if i == 1 else labels.transform(['urgent'])[0] for i in y_pred_emer])
+    y_pred_overall[emer_pred_indices] = y_pred_emer_label
+    print(confusion_matrix(y_val_emer,y_pred_emer))
+    scores = clsr(y_val_emer,y_pred_emer)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+
+    print("Overall classification scores : ")
+    print(confusion_matrix(y_val,y_pred_overall))
+    scores = clsr(y_val,y_pred_overall)
+    scores = list(map(lambda r: re.sub('\s\s+', '\t', r),\
+                                scores.split("\n")))
+    #scores[0] = '\t' + scores[0]
+    scores[-2] = '\t' + scores[-2]
+    scores = '\n'.join(scores)
+    print(scores)
+
+    #Three level hierarchy classifiers ends here
+
+
+    # X_tr_mat, ytr = imbalance_sampling(X_tr_mat, ytr,2)
+    # lda = LinearDiscriminantAnalysis()
+    # X_tr_mat = lda.fit_transform(X_tr_mat.toarray(), ytr)
+
     cls.fit(X_tr_mat, ytr)
     
     y_pred = (cls.predict(X_val_mat))
+
+    # y_pred = postProcess(y_pred,X_val["Message"],labels)
+
     print(confusion_matrix(y_val, y_pred))
     conf_f_name = '_'.join(labels.classes_) + '_cfm.tsv'
     
@@ -367,8 +618,8 @@ def build_and_evaluate(X_train, y_train, X_test, y_test, X_val, y_val,
         logger.info("Saving model")
         pickle.dump(fitted_model,\
                     open('_'.join(sorted(labels.classes_))+'_'+str(cls)[0:10]+'.model', 'wb'))
-    #misclassifications_class(cls, X_val_mat, y_val, X_val,
-    #                         labels, args.level, True)
+    misclassifications_class(cls, y_pred, X_val_mat, y_val, X_val,
+                            labels, args.level, True)
     if args.with_graph:
         plot_feat(vectors_val[1], vectors_val[0], labels, y_val,
                     'Average Feature value for each class')
@@ -391,6 +642,24 @@ def readDocuments(filename, text_col=0, tag_col=1, skip_header=False, encoding='
             labels.append(line[tag_col].strip().lower())
 
     data = {'Message': documents, 'Category': labels}
+    return pd.DataFrame(data)
+
+def readVal(filename, text_col=0, tag_col=1, additional_col=2, skip_header=False, encoding='utf-8'):
+    documents = []
+    labels = []
+    additional = []
+    with open(filename, 'r', newline='', encoding=encoding) as data_file:
+        csvfile = csv.reader(data_file, delimiter="\t")
+
+        for line in csvfile:
+            if skip_header==True:
+                skip_header=False
+                continue
+            documents.append(line[text_col].strip())
+            labels.append(line[tag_col].strip().lower())
+            additional.append(line[additional_col].strip().lower())
+
+    data = {'Message': documents, 'Category': labels, 'WSD/PT/Neg' : additional}
     return pd.DataFrame(data)
 
 

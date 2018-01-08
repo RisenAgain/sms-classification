@@ -2,6 +2,7 @@
 from sklearn.preprocessing import RobustScaler, StandardScaler
 from nltk.parse.stanford import StanfordParser
 from nltk import tree
+import nltk
 import pandas as pd
 import logging
 import numpy as np
@@ -25,6 +26,7 @@ temporal = set(['tonight', 'today', 'tomorrow', 'min', 'month', 'day',
 
 #st_parser = StanfordParser('libs/stanford-parser-full-2016-10-31/stanford-parser.jar',
 #                        'libs/stanford-parser-full-2016-10-31/stanford-parser-3.7.0-models.jar')
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -107,24 +109,24 @@ def lev_match(ref_list, msg_words):
                 return 1
 
 
-def personal(x):
+def personal(x,dependency_tree, dependency_relations):
     regex = personal_regex
     if re.search(regex, x):
         return 1
     return 0
 
 
-def fire(x):
+def fire(x,dependency_tree, dependency_relations):
     regex = fire_regex
     foundMatch = 0
     matchw = None
-    for match in finditer(regex, x):
-        foundMatch = 1
-        matchw = match.group(0)
-        left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or 'don\'t' in x[left:right]:
-            return 0
+
+    if(dont_imperative(x)):
+        return 0
+    if(keywords_general(x)):
+        return 0
+    return check_negation(regex, x, dependency_tree, dependency_relations)
+
     if foundMatch and matchw in wsd_words:
         if validate_wsd(matchw, x):
             return 1
@@ -133,17 +135,15 @@ def fire(x):
     return foundMatch
 
 
-def health(x):
+def health(x,dependency_tree, dependency_relations):
     regex = health_regex
     foundMatch = 0
     matchw = None
-    for match in finditer(regex, x):
-        foundMatch = 1
-        matchw = match.group(0)
-        left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or 'don\'t' in x[left:right]:
-            return 0
+    if(dont_imperative(x)):
+        return 0
+    if(keywords_general(x)):
+        return 0
+    return check_negation(regex, x, dependency_tree, dependency_relations)
     if foundMatch and matchw in wsd_words:
         if validate_wsd(matchw, x):
             return 1
@@ -152,23 +152,22 @@ def health(x):
     return foundMatch
 
 
-def emer(x):
-    return fire(x)+health(x)
+def emer(x, dependency_tree, dependency_relations):
+    return fire(x,dependency_tree, dependency_relations)+health(x,dependency_tree, dependency_relations)
 
 
-def todo(x):
-    return meet_suggest(x)+date(x)
+def todo(x, dependency_tree, dependency_relations):
+    return meet_suggest(x, dependency_tree, dependency_relations)+date(x, dependency_tree, dependency_relations)
 
 
-def request_immedi(x):
+def request_immedi(x, dependency_tree, dependency_relations):
     regex = 'pls| please | now | asap | min |immediate'
     foundMatch = 0
-    for match in finditer(regex, x):
-        foundMatch = 1
-        left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or 'don\'t' in x[left:right]:
-            return 0
+    if(dont_imperative(x)):
+        return 0
+    if(keywords_general(x)):
+        return 0
+    return check_negation(regex, x, dependency_tree, dependency_relations)
     return foundMatch
 
 
@@ -179,13 +178,17 @@ def modal_verbs(x):
     return 0
 
 
-def meet_suggest(x):
+def meet_suggest(x, dependency_tree, dependency_relations):
+    if(dont_imperative(x)):
+        return 0
+    if(keywords_general(x)):
+        return 0
     regex = 'what |schedule| should |shall| once |may be| be \
                  available |meet| can | let'
-    return match_regex(regex, x)
+    return check_negation(regex, x, dependency_tree, dependency_relations)
 
 
-def date(x):
+def date(x, dependency_tree, dependency_relations):
     words = set(x.split())
     match = list(words.intersection(temporal))
     if len(match) > 0:
@@ -193,21 +196,21 @@ def date(x):
     #if lev_match(temporal, words):
     #    return 1
     regex = '[0-9]-[0-9]|morning|afternoon|evening|midnight|month|day|year|week|[0-9]\.[0-9]|[0-9]\s*[ap]m|[0-9]\s*[ap].m|[0-9]\s*min|[0-9]\s*hours|[0-9]:[0-9]|[0-9]\s*today|tomorrow|0th|[4-9]th|1st|2nd|3rd|[0-9]/[0-9]|o\'clock'
-    return match_regex(regex, x)
+    return check_negation(regex, x, dependency_tree, dependency_relations)
 
 
-def msg_len_word(x):
+def msg_len_word(x, dependency_tree, dependency_relations):
     return len(x)
 
 
-def puncts(x):
+def puncts(x, dependency_tree, dependency_relations):
     z = re.findall('[:,\.\/#=\?:0-9\~<>!\-]|\+', x)
     if z:
         return len(z)
     return 0
 
 
-def msg_len_char(x):
+def msg_len_char(x, dependency_tree, dependency_relations):
     return len(x.split())
 
 
@@ -236,36 +239,147 @@ def question(x):
     return 0
 
 
-def call(x):
+def call(x, dependency_tree, dependency_relations):
     x = x.lower()
+    if(dont_imperative(x)):
+        return 0
+    if(keywords_general(x)):
+        return 0
     regex = 'call|immediate|bring|asap|reply'
     #z = re.findall(regex,x)
     foundMatch = 0
-    for match in finditer(regex, x):
-        foundMatch = 1
-        left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or "don't" in x[left:right]:
-            return 0
+    return check_negation(regex, x, dependency_tree, dependency_relations)
     return foundMatch
 
 
-def numeric(x):
+def numeric(x, dependency_tree, dependency_relations):
     z = re.findall('[0-9]+|X+', x)
     if z:
         return len(z)
     return 0
 
 
-def match_regex(regex, x):
+def check_negation(regex, x, dependency_tree, dependency_relations):
     foundMatch = 0
-    for match in finditer(regex, x):
-        foundMatch = 1
-        left = max(match.span()[0] - HALF_WINDOW, 0)
-        right = min(match.span()[1]+HALF_WINDOW, len(x))
-        if 'not' in x[left:right] or "don't" in x[left:right]:
-            return 0
+    if(len(dependency_relations) != 0 and len(dependency_relations[0]) != 0):
+        for match in finditer(regex, x):
+            foundMatch = 1
+            if(traverse_dep_tree(match.group(),dependency_tree,dependency_relations)):
+                return 0
     return foundMatch
+
+
+def traverse_dep_tree(keyword,tree,relations):
+    siblings = []
+    parent = None
+    stack = [[tree,parent,siblings]]
+    neg = False
+
+    #iterative DFS
+    while(stack != []):
+        root = stack.pop()
+        label = None
+        if(type(root[0]) == nltk.Tree):
+            label = root[0].label()
+            # print(label)
+            if(label == keyword):
+                neg |= check_relation(root[1],root[2],relations)
+                neg |= check_relation(label,root[0][:],relations)
+        else:
+            label = root[0]
+            # print(label)
+            if(label == keyword):
+                neg |= check_relation(root[1],root[2],relations)
+
+        if(type(root[0]) == nltk.Tree):
+            for i in reversed(root[0]):
+                stack.append([i,root[0].label(),root[0][:]])
+
+    return neg
+
+
+def check_relation(parent,children,relations):
+    children = [child.label() if(type(child) == nltk.Tree) else child for child in children]
+    relations = relations[0]
+    # print(parent,children)
+    for relation in relations:
+        for child in children:
+            if(parent == relation[0][0] and child == relation[2][0] and relation[1] == 'neg'):
+                return True
+    return False
+
+def dont_imperative(x):
+    if(len(x) != 0):
+        first_word = x.strip().split()[0].lower()
+        if(first_word == "don't" or first_word == "dont"):
+            return True
+    return False
+
+#keywords strongly suggesting a general sentence
+def keywords_general(x):
+    keywords = ["never","ever"]
+    x = x.lower().split()
+    if any(key in x for key in keywords):
+        return True
+    else:
+        return False
+
+
+def tense(x,dependency_tree, dependency_relations):
+    # 0 - past, 1 - present, 2 - future, 3 - unkown
+    sent_tense = 3
+    if(len(dependency_relations) == 0 or len(dependency_relations[0]) == 0):
+        return sent_tense
+    found_verb = None
+    present_verbs = ['VB', 'VBG', 'VBP', 'VBZ']
+    past_verbs = ['VBD', 'VBN']
+    future_verbs = ['MD']
+    for relation in dependency_relations[0]:
+        for verb in past_verbs:
+            if(verb in relation[0][1] or verb in relation[2][1]):
+                sent_tense = 0
+        if(sent_tense != 3):
+            break
+        for verb in future_verbs:
+            if(verb in relation[0][1] or verb in relation[2][1]):
+                sent_tense = 2
+        if(sent_tense != 3):
+            break
+        for verb in present_verbs:
+            if(verb in relation[0][1]):
+                sent_tense = 1
+                found_verb = relation[0][0]
+            elif(verb in relation[2][1]):
+                sent_tense = 1
+                found_verb = relation[2][0]
+        if(sent_tense != 3):
+            break
+    if(sent_tense == 1):
+        for relation in dependency_relations[0]:
+            if(relation[0][0] == found_verb):
+                if(relation[2][1] in past_verbs):
+                    sent_tense = 0
+                elif(relation[2][1] in future_verbs):
+                    sent_tense = 2
+    return (sent_tense)
+
+
+def past(x,dependency_tree, dependency_relations):
+    if(tense(x,dependency_tree, dependency_relations) == 0):
+        return 1
+    return 0
+
+
+def present(x,dependency_tree, dependency_relations):
+    if(tense(x,dependency_tree, dependency_relations) == 1):
+        return 1
+    return 0
+
+
+def future(x,dependency_tree, dependency_relations):
+    if(tense(x,dependency_tree, dependency_relations) == 2):
+        return 1
+    return 0
 
 
 def validate_wsd(word, sent):
@@ -311,10 +425,11 @@ def pos_feat(names, feature_set, dataf):
     return names, feature_set
 
 
-def gen_feat_arr(X, feature_names):
+def gen_feat_arr(X, feature_names, dependency_tree, dependency_relations):
     feature_set = np.empty((0,len(feature_names)))
-    for x in X:
-        features = np.array(list(map(lambda f: f(x), feature_names)))
+    # print(len(X),len(dependency_tree),len(dependency_relations))
+    for i in range(len(X)):
+        features = np.array(list(map(lambda f: f(X[i],dependency_tree[i],dependency_relations[i]), feature_names)))
         feature_set = np.append(feature_set,[features], axis=0)
     return feature_set
 
@@ -326,21 +441,21 @@ def handle_chunks(dataf):
     return np.array(chunk_f)
 
 
-def gen_msg_features(X, dataf = '' , procs = 1):
+def gen_msg_features(X, dependency_tree, dependency_relations, dataf = '', procs = 1):
     X = list(map(lambda a:a.lower().strip('., '), X))
     X = list(map(lambda a:re.sub('[\.]', ' . ',a), X))
     #X = list(map(lambda a:re.sub('[\']', ' ',a), X))
     X = list(map(lambda a:re.sub('[,]', ' , ',a), X))
     #X = list(map(lambda a:re.sub('\s+', '\s',a), X))
     feature_names = [request_immedi, puncts, msg_len_char, msg_len_word,
-                     call, numeric]
+                     call, numeric,past,present,future]
     top_level = [emer, todo]
     second_level = [date, meet_suggest]
     feature_names += top_level
 
     names = np.array(list(map(lambda a: a.__qualname__, feature_names)))
     
-    feature_set = gen_feat_arr(X, feature_names)
+    feature_set = gen_feat_arr(X, feature_names, dependency_tree, dependency_relations)
     #names, feature_set = pos_feat(names, feature_set, dataf)
     
     # handle Chunking
